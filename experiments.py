@@ -7,11 +7,13 @@ import numpy as np
 import constraints as cst
 import dynamics as dyn
 import lqr
+import mission as mis
 from analysis import CTRL_LABELS, STATE_LABELS
 
 DEFAULT_X0_REG = np.array([5.0, 8.0, 2.0, -1.5, 0.08, 0.0, 0.3])
 DEFAULT_X0_TRACK = np.array([-12.0, 15.0, -4.0, 3.0, -0.25, 0.4, -0.8])
 DEFAULT_DELTA_X0 = np.array([8.0, 5.0, -3.0, 2.0, -0.15, 0.25, -0.5])
+DEFAULT_X0_MISSION = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
 TRACKING_Q_DIAG = [1.0, 1.0, 0.5, 0.5, 10.0, 5.0, 0.01]
 TRACKING_R_DIAG = [0.1, 1.0]
@@ -127,6 +129,35 @@ def run_part2_tracking(
         "s_interp": s_interp,
         "xref_interp": xref_interp,
         "trk_ctrl": trk_ctrl,
+    }
+
+
+def run_part3_mission(
+    params,
+    *,
+    x0=None,
+    manifold="M1",
+    Z0=None,
+    verbose=False,
+    multi_start=True,
+):
+    """
+    Part III pipeline: min-time ascent + free-final-time landing (single shooting).
+    Returns ``MissionSolution`` and cost matrices for Phase B.
+    """
+    if x0 is None:
+        x0 = DEFAULT_X0_MISSION.copy()
+    Q, R = mis.mission_cost_matrices()
+    sol = mis.solve_mission(
+        x0, params, manifold=manifold, Z0=Z0, verbose=verbose, multi_start=multi_start
+    )
+    return {
+        "solution": sol,
+        "x0": x0,
+        "params": params,
+        "Q": Q,
+        "R": R,
+        "manifold": manifold,
     }
 
 

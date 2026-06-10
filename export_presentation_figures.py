@@ -9,6 +9,7 @@ import analysis as ana
 import dynamics as dyn
 import experiments as exp
 import lqr
+import mission as mis
 import validation as val
 from param import params
 
@@ -290,6 +291,12 @@ def main():
     val_results = val.run_all_validations(params, t)
     val.export_validation_figures(OUT, val_results, save_figure)
     val.print_report(val_results)
+
+    try:
+        p3 = exp.run_part3_mission(params, manifold="M1", multi_start=False)
+        mis.export_mission_figures(p3["solution"], params, OUT, save_figure)
+    except Exception as exc:
+        print(f"Part III figure export skipped: {exc}")
 
     print(f"Wrote {len(os.listdir(OUT))} figures to {OUT}/")
 

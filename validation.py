@@ -19,9 +19,11 @@ from typing import Optional
 import numpy as np
 
 import analysis as ana
+import constraints as cst
 import dynamics as dyn
 import experiments as exp
 import lqr
+import mission as mis
 
 DEFAULT_TOLS = {
     "riccati": 65.0,
@@ -34,6 +36,8 @@ DEFAULT_TOLS = {
     "fixed_terminal": 1e-2,
     "hamiltonian_terminal": 1e-1,
     "shooting": 1e-2,
+    "manifold": 5e-2,
+    "altitude": 1e-3,
 }
 
 
@@ -349,6 +353,66 @@ def validate_lqr_tracking(
     )
 
 
+def manifold_violations(sol: mis.MissionSolution, params: dict):
+    """L-infinity norm of terminal manifold constraint violations."""
+    x_f = sol.x_b[-1]
+    p_f = sol.p_b[-1]
+    if sol.manifold == "M1":
+        vals = np.array(
+            [x_f[1], x_f[3], x_f[4], p_f[0], p_f[2], p_f[5], p_f[6], sol.H_tf]
+        )
+    else:
+        h1 = (x_f[0] - params["p_c"]) ** 2 + x_f[1] ** 2 - params["r_platform"] ** 2
+        collin = p_f[0] * x_f[1] - p_f[1] * (x_f[0] - params["p_c"])
+        vals = np.array([h1, x_f[3], x_f[4], p_f[2], p_f[5], p_f[6], collin, sol.H_tf])
+    return float(np.max(np.abs(vals))), vals
+
+
+def validate_mission(name, sol: mis.MissionSolution, params, *, tols=None):
+    """Section 9 checks for Part III indirect shooting solution."""
+    tols = tols or DEFAULT_TOLS
+    alt = mis.mission_altitude_history(sol, params)
+    alt_ok = bool(np.all(alt >= -tols["altitude"]))
+
+    man_inf, _ = manifold_violations(sol, params)
+    H_a_drift = float(np.max(sol.H_a) - np.min(sol.H_a)) if sol.H_a.size else 0.0
+    H_b_drift = float(np.max(sol.H_b) - np.min(sol.H_b)) if sol.H_b.size else 0.0
+
+    t = np.concatenate([sol.t_a, sol.t_b])
+    H = np.concatenate([sol.H_a, sol.H_b])
+
+    passed = (
+        sol.success
+        and sol.shoot_norm <= tols["shooting"]
+        and man_inf <= tols["manifold"]
+        and alt_ok
+        and abs(sol.H_tf) <= tols["hamiltonian_terminal"]
+    )
+
+    notes = f"manifold {sol.manifold}; t1={sol.t1:.2g}s, tf={sol.tf:.2g}s"
+    if not alt_ok:
+        notes += "; altitude violation"
+    if H_a_drift > 1.0:
+        notes += f"; H_A drift={H_a_drift:.2g} (informational)"
+
+    return ValidationResult(
+        name=name,
+        passed=passed,
+        terminal_residual=man_inf,
+        adjoint_boundary_residual=float(np.linalg.norm(sol.p_a[-1])),
+        hamiltonian_drift=max(H_a_drift, H_b_drift),
+        hamiltonian_terminal=sol.H_tf,
+        state_ode_max=0.0 if alt_ok else float(-np.min(alt)),
+        adjoint_ode_max=sol.shoot_norm,
+        stationarity_max=0.0,
+        shooting_residual=sol.shoot_norm,
+        fixed_terminal_residual=man_inf,
+        t=t,
+        H=H,
+        notes=notes,
+    )
+
+
 def validate_tpbvp_shooting(
     name,
     *,
@@ -487,7 +551,52 @@ def run_all_validations(params=None, t_grid=None):
         )
     )
 
+    try:
+        p3 = exp.run_part3_mission(params, manifold="M1", verbose=False)
+        sol = p3["solution"]
+        results.append(validate_mission("P3 mission M1 (flat landing)", sol, params))
+    except Exception as exc:
+        results.append(
+            ValidationResult(
+                name="P3 mission M1 (flat landing)",
+                passed=False,
+                terminal_residual=np.nan,
+                adjoint_boundary_residual=np.nan,
+                hamiltonian_drift=np.nan,
+                hamiltonian_terminal=np.nan,
+                state_ode_max=np.nan,
+                adjoint_ode_max=np.nan,
+                stationarity_max=np.nan,
+                shooting_residual=np.nan,
+                notes=f"solver failed: {exc}",
+            )
+        )
+
     return results
+
+
+def print_mission_report(sol: mis.MissionSolution, params: dict):
+    """Part III diagnostic print routine (altitude, Hamiltonian, manifold residuals)."""
+    alt = mis.mission_altitude_history(sol, params)
+    alt_ok = bool(np.all(alt >= -DEFAULT_TOLS["altitude"]))
+    man_inf, man_vals = manifold_violations(sol, params)
+    print("\n=== Part III mission validation ===")
+    print(f"  manifold          : {sol.manifold}")
+    print(f"  phase times       : t1={sol.t1:.4f}s, tf={sol.tf:.4f}s")
+    print(f"  shooting |res|_inf: {sol.shoot_norm:.4e}")
+    print(f"  manifold |res|_inf: {man_inf:.4e}")
+    print(f"  H(tf)             : {sol.H_tf:.4e}")
+    print(f"  H_A drift         : {np.max(sol.H_a)-np.min(sol.H_a):.4e}")
+    print(f"  H_B drift         : {np.max(sol.H_b)-np.min(sol.H_b):.4e}")
+    print(f"  min altitude      : {np.min(alt):.4f} m")
+    if alt_ok:
+        print("  altitude check    : PASS")
+    else:
+        print("  altitude check    : FAIL")
+    if man_inf <= DEFAULT_TOLS["manifold"]:
+        print("  manifold check    : PASS")
+    else:
+        print(f"  manifold check    : FAIL (components {man_vals})")
 
 
 def print_report(results):

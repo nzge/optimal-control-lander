@@ -15,6 +15,11 @@ vx_descent = 40.0  # m/s, large horizontal speed
 vz_descent = -8.0  # m/s, descending
 theta_descent = 0.0  # rad, nearly vertical
 
+# Part III landing platform (manifold M2)
+p_c = 100.0  # m, platform center horizontal coordinate
+r_platform = 20.0  # m, platform radius
+tf_mission_max = 60.0  # s, upper bound on total mission time
+
 params = {
     "g": g,
     "I": I,
@@ -29,4 +34,7 @@ params = {
     "vx_descent": vx_descent,
     "vz_descent": vz_descent,
     "theta_descent": theta_descent,
+    "p_c": p_c,
+    "r_platform": r_platform,
+    "tf_mission_max": tf_mission_max,
 }
