@@ -24,6 +24,7 @@ Figures are written to `figures/presentation/`.
 | `p1_linearization.ipynb` | Part I: controllability, Gramian, LQR regulation, cost sweep |
 | `p2_tracking.ipynb` | Part II: reference trajectory, tracking LQR, robustness |
 | `p3_mission.ipynb` | Part III: min-time ascent + landing shooting (M1/M2) |
+| `p4_nonlinear.ipynb` | Part IV: LQR on nonlinear plant + nonlinear TPBVP |
 
 ## Modules
 
@@ -34,7 +35,8 @@ Figures are written to `figures/presentation/`.
 | `constraints.py` | PMP control saturation and numerical state enforcement |
 | `lqr.py` | Riccati solver, tracking feedforward, constrained simulation |
 | `mission.py` | Part III indirect shooting (Phase A/B), Hamiltonians, residuals |
-| `validation.py` | Section 9 optimality checks (Parts I–III) |
+| `nonlinear.py` | Part IV: three-scenario comparison, nonlinear EOM, TPBVP, figure export |
+| `validation.py` | Section 9 optimality checks (Parts I–IV, `validate_part4`) |
 | `analysis.py` | Cost presets, regulation experiments |
 | `experiments.py` | Shared ICs, time grids, Part II/III pipelines |
 | `export_presentation_figures.py` | Batch figure export for presentation |

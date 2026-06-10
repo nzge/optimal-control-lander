@@ -24,6 +24,7 @@ import dynamics as dyn
 import experiments as exp
 import lqr
 import mission as mis
+import nonlinear as nl
 
 DEFAULT_TOLS = {
     "riccati": 65.0,
@@ -36,6 +37,9 @@ DEFAULT_TOLS = {
     "fixed_terminal": 1e-2,
     "hamiltonian_terminal": 1e-1,
     "shooting": 1e-5,
+    "bvp_bc": 1e-6,
+    "nonlinear_state": 1e-2,
+    "nonlinear_adjoint": 1e-4,
     "manifold": 1e-5,
     "altitude": 1e-3,
 }
@@ -455,6 +459,266 @@ def validate_tpbvp_shooting(
     )
 
 
+def _one_step_plant_defect(t, x, u, params, *, trim_func=nl.TRIM_FUNC):
+    """One-step RK4 defect for a recorded nonlinear rollout."""
+    n = len(t)
+    defects = np.zeros(n)
+    for k in range(n - 1):
+        dt = t[k + 1] - t[k]
+
+        def f(xv):
+            return nl.nonlinear_dynamics(t[k], xv, u[k], params, trim_func=trim_func)
+
+        k1 = f(x[k])
+        k2 = f(x[k] + 0.5 * dt * k1)
+        k3 = f(x[k] + 0.5 * dt * k2)
+        k4 = f(x[k] + dt * k3)
+        x_pred = x[k] + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+        defects[k + 1] = np.linalg.norm(x_pred - x[k + 1])
+    return defects
+
+
+def validate_lqr_on_nonlinear(
+    name,
+    dynamics_func,
+    t,
+    x_hist,
+    u_hist,
+    P_interp,
+    Q,
+    R,
+    params,
+    *,
+    tols=None,
+):
+    """Validate LQR law rolled out on the true nonlinear plant."""
+    tols = tols or DEFAULT_TOLS
+    t = t[: len(x_hist)]
+    x_hist, u_hist = x_hist[: len(t)], u_hist[: len(t)]
+    n = len(t)
+    trim_func = nl.TRIM_FUNC
+
+    state_ode = _one_step_plant_defect(t, x_hist, u_hist, params, trim_func=trim_func)
+
+    stationarity = np.zeros(n)
+    H = np.zeros(n)
+    for k in range(n):
+        A, B = dynamics_func(t[k], params)
+        lam = P_interp(t[k]) @ x_hist[k]
+        stationarity[k] = np.linalg.norm(R @ u_hist[k] + B.T @ lam)
+        p = 2.0 * lam
+        H[k] = nl.hamiltonian(t[k], x_hist[k], p, u_hist[k], Q, R, params, trim_func=trim_func)
+
+    H_drift = float(np.max(H) - np.min(H)) if n else 0.0
+    terminal = float(np.linalg.norm(x_hist[-1]))
+    passed = state_ode.max() <= tols["nonlinear_state"]
+
+    return ValidationResult(
+        name=name,
+        passed=passed,
+        terminal_residual=terminal,
+        adjoint_boundary_residual=0.0,
+        hamiltonian_drift=H_drift,
+        hamiltonian_terminal=float(H[-1]) if n else 0.0,
+        state_ode_max=float(state_ode.max()),
+        adjoint_ode_max=0.0,
+        stationarity_max=float(stationarity.max()),
+        shooting_residual=float(np.sqrt(state_ode.max() ** 2 + stationarity.max() ** 2)),
+        t=t,
+        H=H,
+        state_ode=state_ode,
+        stationarity=stationarity,
+        notes="LQR on nonlinear plant; stationarity uses linear B,P"
+        + (f"; ||x(tf)||={terminal:.3g}" if terminal > 1.0 else ""),
+    )
+
+
+def validate_part4_linear(
+    name,
+    dynamics_func,
+    t,
+    x_hist,
+    u_hist,
+    P_interp,
+    Q,
+    R,
+    Qf,
+    params,
+    *,
+    t_grid=None,
+    tols=None,
+):
+    """Part IV scenario 1: LQR closed loop on the linearized plant."""
+    tols = tols or DEFAULT_TOLS
+    t = t[: len(x_hist)]
+    x_hist, u_hist = x_hist[: len(t)], u_hist[: len(t)]
+    n = len(t)
+    if t_grid is None:
+        t_grid = t
+
+    state_ode = np.zeros(n)
+    stationarity = np.zeros(n)
+    H = np.zeros(n)
+    for k in range(n):
+        A, B = dynamics_func(t[k], params)
+        x, u = x_hist[k], u_hist[k]
+        lam = P_interp(t[k]) @ x
+        xdot = _central_derivative(x_hist, t)[k]
+        state_ode[k] = np.linalg.norm(xdot - (A @ x + B @ u))
+        stationarity[k] = np.linalg.norm(R @ u + B.T @ lam)
+        H[k] = _hamiltonian_regulation(x, u, lam, A, B, Q, R)
+
+    _, t_P, P_hist = lqr.solve_riccati_backward(dynamics_func, t_grid, Q, R, Qf, params)
+    terminal = _riccati_terminal(P_hist, Qf)
+    H_drift = float(np.max(H) - np.min(H)) if n else 0.0
+
+    passed = (
+        terminal <= tols["terminal_P"]
+        and state_ode.max() <= tols["state_ode"]
+        and stationarity.max() <= tols["stationarity"]
+    )
+
+    return ValidationResult(
+        name=name,
+        passed=passed,
+        terminal_residual=float(np.linalg.norm(x_hist[-1])),
+        adjoint_boundary_residual=terminal,
+        hamiltonian_drift=H_drift,
+        hamiltonian_terminal=float(H[-1]) if n else 0.0,
+        state_ode_max=float(state_ode.max()),
+        adjoint_ode_max=terminal,
+        stationarity_max=float(stationarity.max()),
+        shooting_residual=float(np.sqrt(state_ode.max() ** 2 + stationarity.max() ** 2 + terminal**2)),
+        t=t,
+        H=H,
+        state_ode=state_ode,
+        stationarity=stationarity,
+        notes=f"terminal Riccati BC={terminal:.2e}; ||x(tf)||={np.linalg.norm(x_hist[-1]):.3g}",
+    )
+
+
+def validate_part4(result, params, *, tols=None):
+    """Run Section 9 checks on all three Part IV scenarios."""
+    sl = result["scenario_linear"]
+    sn = result["scenario_lqr_nl"]
+    sp = result["scenario_pmp_nl"]
+    Q, R, Qf = result["Q"], result["R"], result["Qf"]
+    df = result["dynamics_func"]
+
+    results = [
+        validate_part4_linear(
+            "P4 (1) LQR / linear plant",
+            df,
+            sl["t_eff"],
+            sl["x_hist"],
+            sl["u_hist"],
+            sl["P_interp"],
+            Q,
+            R,
+            Qf,
+            params,
+            t_grid=sl["t_eff"],
+            tols=tols,
+        ),
+        validate_lqr_on_nonlinear(
+            "P4 (2) LQR / nonlinear plant",
+            df,
+            sn["t"],
+            sn["x"],
+            sn["u"],
+            sl["P_interp"],
+            Q,
+            R,
+            params,
+            tols=tols,
+        ),
+        validate_nonlinear_tpbvp(
+            "P4 (3) PMP / nonlinear plant",
+            sp,
+            result["x0"],
+            Q,
+            R,
+            Qf,
+            params,
+            tols=tols,
+        ),
+    ]
+    return results
+
+
+def validate_nonlinear_tpbvp(name, sol: nl.NonlinearSolution, x0, Q, R, Qf, params, *, tols=None):
+    """Section 9 checks for Part IV nonlinear collocation solution."""
+    tols = tols or DEFAULT_TOLS
+    t, x, p, u = sol.t, sol.x, sol.p, sol.u
+    n = len(t)
+    trim_func = nl.TRIM_FUNC
+
+    state_ode = _one_step_nonlinear_defect(x0, x, p, t, R, params, trim_func=trim_func)
+
+    stationarity = np.zeros(n)
+    for k in range(n):
+        u_star = nl.optimal_control(t[k], x[k], p[k], R, params, trim_func=trim_func)
+        stationarity[k] = np.linalg.norm(u[k] - u_star)
+
+    H = sol.H
+    H_drift = float(np.max(H) - np.min(H)) if n else 0.0
+    bc_res = sol.bc_residual
+    terminal = float(np.linalg.norm(x[-1]))
+
+    passed = (
+        sol.success
+        and bc_res <= tols["bvp_bc"]
+        and state_ode.max() <= tols["nonlinear_state"]
+        and stationarity.max() <= tols["stationarity"]
+    )
+
+    shooting = float(
+        np.sqrt(state_ode.max() ** 2 + stationarity.max() ** 2 + bc_res**2)
+    )
+
+    return ValidationResult(
+        name=name,
+        passed=passed,
+        terminal_residual=terminal,
+        adjoint_boundary_residual=bc_res,
+        hamiltonian_drift=H_drift,
+        hamiltonian_terminal=float(H[-1]) if n else 0.0,
+        state_ode_max=float(state_ode.max()),
+        adjoint_ode_max=bc_res,
+        stationarity_max=float(stationarity.max()),
+        shooting_residual=shooting,
+        fixed_terminal_residual=bc_res,
+        t=t,
+        H=H,
+        state_ode=state_ode,
+        adjoint_ode=np.full(n, bc_res),
+        stationarity=stationarity,
+        notes=f"BVP bc |res|_inf={bc_res:.2e}; forward rollout check",
+    )
+
+
+def _one_step_nonlinear_defect(x0, x, p, t, R, params, *, trim_func=nl.TRIM_FUNC):
+    """One-step RK4 defect between consecutive BVP mesh states."""
+    n = len(t)
+    defects = np.zeros(n)
+    if np.linalg.norm(x[0] - x0) > 1e-8:
+        defects[0] = np.linalg.norm(x[0] - x0)
+    for k in range(n - 1):
+        dt = t[k + 1] - t[k]
+        u = nl.optimal_control(t[k], x[k], p[k], R, params, trim_func=trim_func)
+
+        def f(xv):
+            return nl.nonlinear_dynamics(t[k], xv, u, params, trim_func=trim_func)
+
+        k1 = f(x[k])
+        k2 = f(x[k] + 0.5 * dt * k1)
+        k3 = f(x[k] + 0.5 * dt * k2)
+        k4 = f(x[k] + dt * k3)
+        x_pred = x[k] + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+        defects[k + 1] = np.linalg.norm(x_pred - x[k + 1])
+    return defects
+
+
 def run_all_validations(params=None, t_grid=None):
     """Run Section 9 checks on all implemented optimal controllers (Parts I–II)."""
     if params is None:
@@ -559,6 +823,26 @@ def run_all_validations(params=None, t_grid=None):
         results.append(
             ValidationResult(
                 name="P3 mission M1 (flat landing)",
+                passed=False,
+                terminal_residual=np.nan,
+                adjoint_boundary_residual=np.nan,
+                hamiltonian_drift=np.nan,
+                hamiltonian_terminal=np.nan,
+                state_ode_max=np.nan,
+                adjoint_ode_max=np.nan,
+                stationarity_max=np.nan,
+                shooting_residual=np.nan,
+                notes=f"solver failed: {exc}",
+            )
+        )
+
+    try:
+        p4 = exp.run_part4_nonlinear(params, t_grid, verbose=False)
+        results.extend(validate_part4(p4, params))
+    except Exception as exc:
+        results.append(
+            ValidationResult(
+                name="P4 three-scenario comparison",
                 passed=False,
                 terminal_residual=np.nan,
                 adjoint_boundary_residual=np.nan,

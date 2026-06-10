@@ -10,6 +10,7 @@ import dynamics as dyn
 import experiments as exp
 import lqr
 import mission as mis
+import nonlinear as nl
 import validation as val
 from param import params
 
@@ -289,7 +290,10 @@ def main():
     save_figure(fig, f"{OUT}/p2_reference_noise_robustness.png")
 
     val_results = val.run_all_validations(params, t)
-    val.export_validation_figures(OUT, val_results, save_figure)
+    try:
+        val.export_validation_figures(OUT, val_results, save_figure)
+    except Exception as exc:
+        print(f"Validation figure export skipped: {exc}")
     val.print_report(val_results)
 
     try:
@@ -301,6 +305,42 @@ def main():
         print("Part III metrics:", stats)
     except Exception as exc:
         print(f"Part III figure export skipped: {exc}")
+        import traceback
+        traceback.print_exc()
+
+    try:
+        p4 = exp.run_part4_nonlinear(params, t, verbose=True)
+        nl.print_part4_report(p4)
+        p4_stats = nl.export_part4_figures(p4, OUT, save_figure)
+        val.print_report(val.validate_part4(p4, params))
+        print("Part IV metrics:", p4_stats)
+
+        theta_scales = np.linspace(0.75, 2.5, 5)
+        sens = nl.angle_sensitivity(
+            params, t, p4["Q"], p4["R"], p4["Qf"], exp.DEFAULT_X0_PART4, theta_scales,
+        )
+        ok = [r for r in sens if r.get("bvp_success")]
+        if ok:
+            fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+            th = [r["theta0"] for r in ok]
+            axes[0].plot(th, [r["J_u_linear"] for r in ok], "o-", label="LQR / linear")
+            axes[0].plot(th, [r["J_u_lqr_nl"] for r in ok], "s-", label="LQR / nonlinear")
+            axes[0].plot(th, [r["J_u_pmp_nl"] for r in ok], "D--", label="PMP / nonlinear")
+            axes[0].set(xlabel=r"$\theta_0$ scale (× nominal)", ylabel=r"$J_u$")
+            axes[0].legend(fontsize=7)
+            axes[0].grid(True, alpha=0.3)
+            savings = [100.0 * (1.0 - r["J_u_pmp_nl"] / r["J_u_lqr_nl"]) for r in ok]
+            axes[1].plot(th, savings, "D-", color="C2")
+            axes[1].axhline(0, color="k", lw=0.6)
+            axes[1].set(
+                xlabel=r"$\theta_0$ scale (× nominal)",
+                ylabel="PMP savings vs LQR/nonlinear [%]",
+                title="Control effort gain vs pitch deviation",
+            )
+            axes[1].grid(True, alpha=0.3)
+            save_figure(fig, f"{OUT}/p4_theta_sensitivity.png")
+    except Exception as exc:
+        print(f"Part IV figure export skipped: {exc}")
         import traceback
         traceback.print_exc()
 
