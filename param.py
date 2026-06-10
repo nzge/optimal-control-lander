@@ -2,6 +2,7 @@
 g = 9.8 #m/s
 I = 10 #kg-m/s^2
 m0 = 20 #kg
+m_dry = 8 #kg, propellant depleted mass floor
 T_min = 0 #N
 T_max = 300 #N
 α = 0.005 #kg/(N-s)
@@ -18,6 +19,7 @@ params = {
     "g": g,
     "I": I,
     "m0": m0,
+    "m_dry": m_dry,
     "T_min": T_min,
     "T_max": T_max,
     "α": α,

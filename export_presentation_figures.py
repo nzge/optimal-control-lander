@@ -7,25 +7,34 @@ import numpy as np
 
 import analysis as ana
 import dynamics as dyn
+import experiments as exp
 import lqr
-import param as param
+import validation as val
+from param import params
 
 OUT = "figures/presentation"
-STATE_LABELS = ["p_x", "p_z", "v_x", "v_z", "θ", "ω", "m"]
-CTRL_LABELS = ["δT", "τ"]
 
 
-def trk_ctrl_factory(df, P_trk, s_interp, xref_interp, Q, R, params):
-    return lambda tt, xx: lqr.tracking_control(
-        tt, xx, xref_interp(tt), df, P_trk, s_interp, Q, R, params
-    )[0]
+def _layout(fig, *, has_suptitle=False):
+    """Reserve headroom so titles and suptitles are not clipped."""
+    if has_suptitle:
+        fig.tight_layout(rect=[0, 0, 1, 0.84], pad=1.6)
+        if fig._suptitle is not None:
+            fig._suptitle.set_y(0.98)
+    else:
+        fig.tight_layout(pad=1.4)
+
+
+def save_figure(fig, path, *, has_suptitle=False):
+    _layout(fig, has_suptitle=has_suptitle)
+    pad = 0.55 if has_suptitle else 0.2
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=pad)
+    plt.close(fig)
 
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    params = param.params
-    tf = params["tf_descent"]
-    t = np.linspace(0.0, tf, 401)
+    t = exp.default_time_grid(params)
 
     rows = dyn.compare_along_trajectory(params)
     ts = [r["t"] for r in rows]
@@ -46,33 +55,28 @@ def main():
         title="Horizontal controllability proxy (descent only)",
     )
     axes[1].grid(True, which="both", alpha=0.3)
-    plt.tight_layout()
-    fig.savefig(f"{OUT}/p1_gramian_remaining_horizon.png", dpi=150)
-    plt.close()
+    save_figure(fig, f"{OUT}/p1_gramian_remaining_horizon.png")
 
-    x0_reg = np.array([5.0, 8.0, 2.0, -1.5, 0.08, 0.0, 0.3])
     hover_rows = ana.sweep_cost_presets(
-        dyn.get_hover_dynamics, t, x0_reg, params, include_scaled_identity=True
+        dyn.get_hover_dynamics, t, exp.DEFAULT_X0_REG, params, include_scaled_identity=True
     )
     fig, axes = plt.subplots(2, 2, figsize=(11, 7))
     colors = plt.cm.tab10(np.linspace(0, 1, len(hover_rows)))
     for r, c in zip(hover_rows, colors):
-        axes[0, 0].plot(t, r["state_norm_trace"], color=c, alpha=0.8, label=r["preset"])
-        axes[0, 1].plot(t, r["weighted_state_trace"], color=c, alpha=0.8)
-        axes[1, 0].plot(t, r["control_norm_trace"], color=c, alpha=0.8)
+        t_eff = r["t_eff"]
+        axes[0, 0].plot(t_eff, r["state_norm_trace"], color=c, alpha=0.8, label=r["preset"])
+        axes[0, 1].plot(t_eff, r["weighted_state_trace"], color=c, alpha=0.8)
+        axes[1, 0].plot(t_eff, r["control_norm_trace"], color=c, alpha=0.8)
         axes[1, 1].plot(r["x_hist"][:, 0], r["x_hist"][:, 1], color=c, alpha=0.8)
     axes[0, 0].set(title=r"$\|x(t)\|$", xlabel="t [s]")
     axes[0, 0].legend(fontsize=7, ncol=2)
     axes[0, 1].set(title=r"$\sqrt{x^\top Q x}$", xlabel="t [s]")
     axes[1, 0].set(title=r"$\|u(t)\|$", xlabel="t [s]")
     axes[1, 1].set(title=r"$p_x$ vs $p_z$", xlabel=r"$p_x$", ylabel=r"$p_z$")
-    plt.tight_layout()
-    fig.savefig(f"{OUT}/p1_cost_preset_sweep.png", dpi=150)
-    plt.close()
+    save_figure(fig, f"{OUT}/p1_cost_preset_sweep.png")
 
     best = min(hover_rows, key=lambda r: (r["terminal_state_norm"], r["J"]))
     Q, R, Qf = ana.cost_from_preset(best["preset"])
-    delta_x0 = np.array([8.0, 5.0, -3.0, 2.0, -0.15, 0.25, -0.5])
     alphas = np.linspace(0.25, 2.0, 8)
     cmp = ana.compare_linearizations(
         dyn.get_hover_dynamics,
@@ -81,44 +85,41 @@ def main():
         Q,
         R,
         Qf,
-        x0_reg,
+        exp.DEFAULT_X0_REG,
         params,
         ic_alphas=alphas,
-        delta_x0=delta_x0,
+        delta_x0=exp.DEFAULT_DELTA_X0,
     )
     xh, xd = cmp["hover"]["x_hist"], cmp["descent"]["x_hist"]
+    th, td = cmp["hover"]["t_eff"], cmp["descent"]["t_eff"]
     mh, md = cmp["hover"]["metrics"], cmp["descent"]["metrics"]
 
     fig, axes = plt.subplots(2, 2, figsize=(11, 7))
-    axes[0, 0].plot(t, mh["state_norm_trace"], "C0-", label="hover")
-    axes[0, 0].plot(t, md["state_norm_trace"], "C3--", label="descent")
-    axes[0, 1].plot(t, mh["weighted_state_trace"], "C0-")
-    axes[0, 1].plot(t, md["weighted_state_trace"], "C3--")
-    axes[1, 0].plot(t, mh["control_norm_trace"], "C0-")
-    axes[1, 0].plot(t, md["control_norm_trace"], "C3--")
+    axes[0, 0].plot(th, mh["state_norm_trace"], "C0-", label="hover")
+    axes[0, 0].plot(td, md["state_norm_trace"], "C3--", label="descent")
+    axes[0, 1].plot(th, mh["weighted_state_trace"], "C0-")
+    axes[0, 1].plot(td, md["weighted_state_trace"], "C3--")
+    axes[1, 0].plot(th, mh["control_norm_trace"], "C0-")
+    axes[1, 0].plot(td, md["control_norm_trace"], "C3--")
     axes[1, 1].plot(xh[:, 0], xh[:, 1], "C0-", lw=2, label="hover")
     axes[1, 1].plot(xd[:, 0], xd[:, 1], "C3--", lw=2, label="descent")
-    axes[1, 1].scatter([x0_reg[0]], [x0_reg[1]], c="k", s=40, zorder=5)
+    axes[1, 1].scatter([exp.DEFAULT_X0_REG[0]], [exp.DEFAULT_X0_REG[1]], c="k", s=40, zorder=5)
     for ax, title in zip(
         axes.flat, [r"$\|x\|$", r"$\sqrt{x^\top Qx}$", r"$\|u\|$", r"$p_x$ vs $p_z$"]
     ):
         ax.set(title=title, xlabel="t [s]" if ax is not axes[1, 1] else None)
     axes[0, 0].legend()
     axes[1, 1].legend()
-    plt.tight_layout()
-    fig.savefig(f"{OUT}/p1_hover_vs_descent_2x2.png", dpi=150)
-    plt.close()
+    save_figure(fig, f"{OUT}/p1_hover_vs_descent_2x2.png")
 
-    fig, axes = plt.subplots(1, 3, figsize=(12, 3.5))
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4.0))
     for i, lab in enumerate(["p_x", "p_z", "θ"]):
-        axes[i].plot(t, xh[:, i], "C0-", label="hover")
-        axes[i].plot(t, xd[:, i], "C3--", label="descent")
+        axes[i].plot(th, xh[:, i], "C0-", label="hover")
+        axes[i].plot(td, xd[:, i], "C3--", label="descent")
         axes[i].set(xlabel="t [s]", title=lab)
         axes[i].legend()
-    plt.suptitle("Weakly controllable directions: horizontal & attitude transients", y=1.02)
-    plt.tight_layout()
-    fig.savefig(f"{OUT}/p1_weak_direction_transients.png", dpi=150)
-    plt.close()
+    fig.suptitle("Weakly controllable directions: horizontal & attitude transients")
+    save_figure(fig, f"{OUT}/p1_weak_direction_transients.png", has_suptitle=True)
 
     ic_h, ic_d = cmp["ic_sensitivity"]["hover"], cmp["ic_sensitivity"]["descent"]
     fig, axes = plt.subplots(1, 3, figsize=(12, 3.5))
@@ -132,41 +133,33 @@ def main():
     axes[1].set(title=r"$\int \|u\|^2 dt$", xlabel=r"$\alpha$")
     axes[2].set(title="Cost J", xlabel=r"$\alpha$")
     axes[0].legend()
-    plt.tight_layout()
-    fig.savefig(f"{OUT}/p1_ic_sensitivity.png", dpi=150)
-    plt.close()
+    save_figure(fig, f"{OUT}/p1_ic_sensitivity.png")
 
-    Q2 = np.diag([1.0, 1.0, 0.5, 0.5, 10.0, 5.0, 0.01])
-    R2 = np.diag([0.1, 1.0])
-    Qf2 = np.diag([10.0, 10.0, 1.0, 1.0, 50.0, 20.0, 0.1])
-    df = dyn.get_hover_dynamics
-    A, B = df(0.0, params)
-    P_reg, _, _ = lqr.solve_riccati_backward(df, t, Q2, R2, Qf2, params)
-    reg_ctrl = lambda tt, xx: lqr.regulation_control(tt, xx, df, P_reg, Q2, R2, params)
-    xref, uref = lqr.simulate_lti_closed_loop(A, B, t, reg_ctrl, x0_reg)
-    P_trk, _, _ = lqr.solve_riccati_backward(df, t, Q2, R2, np.zeros((7, 7)), params)
-    s_interp, _, _, xref_interp = lqr.solve_tracking_feedforward(
-        df, t, Q2, R2, xref, P_trk, params
-    )
-    x0_track = np.array([-12.0, 15.0, -4.0, 3.0, -0.25, 0.4, -0.8])
-    trk_ctrl = trk_ctrl_factory(df, P_trk, s_interp, xref_interp, Q2, R2, params)
-    x_trk, u_trk = lqr.simulate_lti_closed_loop(A, B, t, trk_ctrl, x0_track)
-    err = x_trk - xref
+    p2 = exp.run_part2_tracking(params, t)
+    xref, uref = p2["xref"], p2["uref"]
+    x_trk, u_trk = p2["x_trk"], p2["u_trk"]
+    t_ref, t_trk = p2["t_ref"], p2["t_trk"]
+    Q2, R2 = p2["Q"], p2["R"]
+    df = p2["dynamics_func"]
+    P_trk = p2["P_trk"]
+    s_interp = p2["s_interp"]
+    trk_ctrl = p2["trk_ctrl"]
+    x0_track = p2["x0_track"]
+    trim_func = p2["constraints"].trim_func
+    err = x_trk - xref[: len(x_trk)]
 
     fig, axes = plt.subplots(2, 2, figsize=(11, 7))
     for i, ax in enumerate(axes[0]):
-        ax.plot(t, xref[:, i], label=STATE_LABELS[i])
+        ax.plot(t_ref, xref[:, i], label=exp.STATE_LABELS[i])
         ax.set(title="Reference states $x_{ref}(t)$")
     for j, ax in enumerate(axes[1]):
-        ax.plot(t, uref[:, j], label=CTRL_LABELS[j])
+        ax.plot(t_ref, uref[:, j], label=exp.CTRL_LABELS[j])
         ax.set(title="Reference controls", xlabel="t [s]")
-    plt.tight_layout()
-    fig.savefig(f"{OUT}/p2_reference_states_controls.png", dpi=150)
-    plt.close()
+    save_figure(fig, f"{OUT}/p2_reference_states_controls.png")
 
     fig, ax = plt.subplots(figsize=(6, 6))
     ax.plot(xref[:, 0], xref[:, 1], "C0-", lw=2, label=r"$x_{ref}$")
-    step = max(1, len(t) // 25)
+    step = max(1, len(t_ref) // 25)
     ax.quiver(
         xref[::step, 0],
         xref[::step, 1],
@@ -180,21 +173,18 @@ def main():
     ax.set(xlabel=r"$p_x$ [m]", ylabel=r"$p_z$ [m]", title="Reference mission trajectory")
     ax.axis("equal")
     ax.grid(True, alpha=0.3)
-    fig.savefig(f"{OUT}/p2_reference_mission_plane.png", dpi=150)
-    plt.close()
+    save_figure(fig, f"{OUT}/p2_reference_mission_plane.png")
 
     fig, axes = plt.subplots(4, 2, figsize=(12, 12))
     for i in range(7):
         ax = axes.flat[i]
-        ax.plot(t, xref[:, i], "k--", alpha=0.7, label="ref")
-        ax.plot(t, x_trk[:, i], "C0", label="tracked")
-        ax.set(title=STATE_LABELS[i], xlabel="t [s]")
+        ax.plot(t_ref, xref[:, i], "k--", alpha=0.7, label="ref")
+        ax.plot(t_trk, x_trk[:, i], "C0", label="tracked")
+        ax.set(title=exp.STATE_LABELS[i], xlabel="t [s]")
     axes.flat[7].axis("off")
     axes[0, 0].legend()
-    plt.suptitle("Tracking performance: states vs reference", y=1.01)
-    plt.tight_layout()
-    fig.savefig(f"{OUT}/p2_tracking_states_4x2.png", dpi=150)
-    plt.close()
+    fig.suptitle("Tracking performance: states vs reference")
+    save_figure(fig, f"{OUT}/p2_tracking_states_4x2.png", has_suptitle=True)
 
     fig, ax = plt.subplots(figsize=(6, 6))
     ax.plot(xref[:, 0], xref[:, 1], "k--", lw=2, label="reference")
@@ -204,61 +194,60 @@ def main():
     ax.legend()
     ax.axis("equal")
     ax.grid(True, alpha=0.3)
-    fig.savefig(f"{OUT}/p2_mission_plane_convergence.png", dpi=150)
-    plt.close()
+    save_figure(fig, f"{OUT}/p2_mission_plane_convergence.png")
 
     weighted_err = np.array([np.sqrt(e @ Q2 @ e) for e in err])
     fig, axes = plt.subplots(1, 2, figsize=(11, 4))
-    axes[0].plot(t, weighted_err, "C0")
+    axes[0].plot(t_trk, weighted_err, "C0")
     axes[0].set(title="Weighted tracking error norm", xlabel="t [s]")
     for i in [0, 1, 4]:
-        axes[1].plot(t, err[:, i], label=STATE_LABELS[i])
+        axes[1].plot(t_trk, err[:, i], label=exp.STATE_LABELS[i])
     axes[1].set(title="Error transients (selected states)", xlabel="t [s]")
     axes[1].legend()
-    plt.tight_layout()
-    fig.savefig(f"{OUT}/p2_error_transients.png", dpi=150)
-    plt.close()
+    save_figure(fig, f"{OUT}/p2_error_transients.png")
 
     u_fb = np.zeros_like(u_trk)
     u_ff = np.zeros_like(u_trk)
-    for k, tk in enumerate(t):
+    for k, tk in enumerate(t_trk):
         _, Bk = df(tk, params)
         Pk = P_trk(tk)
         Kk = np.linalg.inv(R2) @ Bk.T @ Pk
         u_fb[k] = -Kk @ (x_trk[k] - xref[k])
         u_ff[k] = -np.linalg.inv(R2) @ Bk.T @ s_interp(tk)
-    fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+    fig, axes = plt.subplots(2, 1, figsize=(10, 6.5), sharex=True)
     for j in range(2):
-        axes[j].plot(t, u_trk[:, j], "k", lw=2, label="total")
-        axes[j].plot(t, u_fb[:, j], "C0--", label="feedback")
-        axes[j].plot(t, u_ff[:, j], "C1:", label="feedforward")
-        axes[j].set(ylabel=CTRL_LABELS[j])
+        axes[j].plot(t_trk, u_trk[:, j], "k", lw=2, label="total (saturated)")
+        axes[j].plot(t_trk, u_fb[:, j], "C0--", label="feedback")
+        axes[j].plot(t_trk, u_ff[:, j], "C1:", label="feedforward")
+        exp.add_control_bound_hlines(axes[j], j, t_trk, params, trim_func)
+        axes[j].set(ylabel=exp.CTRL_LABELS[j])
     axes[1].set(xlabel="t [s]")
     axes[0].legend()
-    plt.suptitle("Transient control decomposition", y=1.01)
-    plt.tight_layout()
-    fig.savefig(f"{OUT}/p2_control_decomposition.png", dpi=150)
-    plt.close()
+    fig.suptitle("Transient control decomposition")
+    save_figure(fig, f"{OUT}/p2_control_decomposition.png", has_suptitle=True)
 
-    fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+    fig, axes = plt.subplots(2, 1, figsize=(10, 6.5), sharex=True)
     for j in range(2):
-        axes[j].plot(t, uref[:, j], "k--", alpha=0.7, label="ref")
-        axes[j].plot(t, u_trk[:, j], "C0", label="track")
-        axes[j].set(ylabel=CTRL_LABELS[j])
+        axes[j].plot(t_ref, uref[:, j], "k--", alpha=0.7, label="ref")
+        axes[j].plot(t_trk, u_trk[:, j], "C0", label="track")
+        exp.add_control_bound_hlines(axes[j], j, t_trk, params, trim_func)
+        axes[j].set(ylabel=exp.CTRL_LABELS[j])
     axes[1].set(xlabel="t [s]")
     axes[0].legend()
-    plt.suptitle("Control effort: reference vs tracking", y=1.01)
-    plt.tight_layout()
-    fig.savefig(f"{OUT}/p2_control_effort.png", dpi=150)
-    plt.close()
+    fig.suptitle("Control effort: reference vs tracking")
+    save_figure(fig, f"{OUT}/p2_control_effort.png", has_suptitle=True)
 
-    delta = x0_track - x0_reg
+    delta = x0_track - exp.DEFAULT_X0_REG
     alphas2 = np.linspace(0.2, 1.5, 8)
+    A, B = p2["A"], p2["B"]
     term_err_ic, cost_ic = [], []
     for alpha in alphas2:
-        xt, ut = lqr.simulate_lti_closed_loop(A, B, t, trk_ctrl, x0_reg + alpha * delta)
-        term_err_ic.append(np.linalg.norm(xt[-1] - xref[-1]))
-        cost_ic.append(lqr.tracking_cost(xt, ut, xref, Q2, R2, t))
+        xt, ut, _ = lqr.simulate_lti_closed_loop(
+            A, B, t, trk_ctrl, exp.DEFAULT_X0_REG + alpha * delta, constraints=p2["constraints"]
+        )
+        t_eff = exp.align_time(t, xt)
+        term_err_ic.append(np.linalg.norm(xt[-1] - xref[len(xt) - 1]))
+        cost_ic.append(lqr.tracking_cost(xt, ut, xref[: len(xt)], Q2, R2, t_eff))
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     axes[0].plot(alphas2, term_err_ic, "o-")
     axes[0].set(
@@ -268,9 +257,7 @@ def main():
     )
     axes[1].plot(alphas2, cost_ic, "s-", color="C1")
     axes[1].set(xlabel=r"IC scale $\alpha$", ylabel="tracking cost J", title="Cost vs IC deviation")
-    plt.tight_layout()
-    fig.savefig(f"{OUT}/p2_ic_robustness.png", dpi=150)
-    plt.close()
+    save_figure(fig, f"{OUT}/p2_ic_robustness.png")
 
     rng = np.random.default_rng(42)
     noise_levels = [0.0, 0.05, 0.15, 0.30]
@@ -278,10 +265,13 @@ def main():
     for sigma in noise_levels:
         xref_noisy = xref + sigma * rng.standard_normal(xref.shape)
         s_n, _, _, xi = lqr.solve_tracking_feedforward(df, t, Q2, R2, xref_noisy, P_trk, params)
-        ctrl = trk_ctrl_factory(df, P_trk, s_n, xi, Q2, R2, params)
-        xn, un = lqr.simulate_lti_closed_loop(A, B, t, ctrl, x0_track)
-        term_err_ref.append(np.linalg.norm(xn[-1] - xref[-1]))
-        cost_ref.append(lqr.tracking_cost(xn, un, xref, Q2, R2, t))
+        ctrl = exp.make_tracking_control(df, P_trk, s_n, xi, Q2, R2, params)
+        xn, un, _ = lqr.simulate_lti_closed_loop(
+            A, B, t, ctrl, x0_track, constraints=p2["constraints"]
+        )
+        t_eff = exp.align_time(t, xn)
+        term_err_ref.append(np.linalg.norm(xn[-1] - xref[len(xn) - 1]))
+        cost_ref.append(lqr.tracking_cost(xn, un, xref[: len(xn)], Q2, R2, t_eff))
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     axes[0].plot(noise_levels, term_err_ref, "o-", color="C2")
     axes[0].set(
@@ -295,9 +285,11 @@ def main():
         ylabel="tracking cost vs true ref",
         title="Cost degradation under reference mismatch",
     )
-    plt.tight_layout()
-    fig.savefig(f"{OUT}/p2_reference_noise_robustness.png", dpi=150)
-    plt.close()
+    save_figure(fig, f"{OUT}/p2_reference_noise_robustness.png")
+
+    val_results = val.run_all_validations(params, t)
+    val.export_validation_figures(OUT, val_results, save_figure)
+    val.print_report(val_results)
 
     print(f"Wrote {len(os.listdir(OUT))} figures to {OUT}/")
 

@@ -5,6 +5,22 @@ from scipy.integrate import solve_ivp
 # State order: [p_x, p_z, v_x, v_z, theta, omega, m]
 
 
+def hover_trim(t, params):
+    """Constant hover trim used for LTI regulation at (v=0, theta=0, T=mg, m=m0)."""
+    m = params["m0"]
+    return {
+        "px": 0.0,
+        "pz": 0.0,
+        "vx": 0.0,
+        "vz": 0.0,
+        "theta": 0.0,
+        "omega": 0.0,
+        "m": m,
+        "T": m * params["g"],
+        "tau": 0.0,
+    }
+
+
 def descent_trim(t, params):
     """
     Nominal powered-descent trim from Part I.5.2:

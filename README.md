@@ -28,10 +28,13 @@ Figures are written to `figures/presentation/`.
 
 | File | Role |
 |------|------|
-| `param.py` | Physical parameters |
+| `param.py` | Physical parameters and control/state bounds |
 | `dynamics.py` | Trim, linearization, Gramian |
-| `lqr.py` | Riccati solver, tracking feedforward, simulation |
+| `constraints.py` | PMP control saturation and numerical state enforcement |
+| `lqr.py` | Riccati solver, tracking feedforward, constrained simulation |
 | `analysis.py` | Cost presets, regulation experiments |
+| `experiments.py` | Shared ICs, time grids, Part II tracking pipeline |
+| `export_presentation_figures.py` | Batch figure export for presentation |
 
 ## Setup
 
