@@ -35,8 +35,8 @@ DEFAULT_TOLS = {
     "hamiltonian_drift": 50.0,
     "fixed_terminal": 1e-2,
     "hamiltonian_terminal": 1e-1,
-    "shooting": 1e-2,
-    "manifold": 5e-2,
+    "shooting": 1e-5,
+    "manifold": 1e-5,
     "altitude": 1e-3,
 }
 

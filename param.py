@@ -15,9 +15,9 @@ vx_descent = 40.0  # m/s, large horizontal speed
 vz_descent = -8.0  # m/s, descending
 theta_descent = 0.0  # rad, nearly vertical
 
-# Part III landing platform (manifold M2)
-p_c = 100.0  # m, platform center horizontal coordinate
-r_platform = 20.0  # m, platform radius
+# Part III landing platform (manifold M2, hover-trim deviation coords)
+p_c = 12.0  # m — scaled for LTI-valid mission arc (spec uses 100 m at larger scale)
+r_platform = 5.0  # m
 tf_mission_max = 60.0  # s, upper bound on total mission time
 
 params = {

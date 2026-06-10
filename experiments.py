@@ -149,7 +149,8 @@ def run_part3_mission(
         x0 = DEFAULT_X0_MISSION.copy()
     Q, R = mis.mission_cost_matrices()
     sol = mis.solve_mission(
-        x0, params, manifold=manifold, Z0=Z0, verbose=verbose, multi_start=multi_start
+        x0, params, manifold=manifold, Z0=Z0, verbose=verbose,
+        multi_start=multi_start, target_tol=mis.TARGET_TOL,
     )
     return {
         "solution": sol,

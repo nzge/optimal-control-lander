@@ -293,10 +293,16 @@ def main():
     val.print_report(val_results)
 
     try:
-        p3 = exp.run_part3_mission(params, manifold="M1", multi_start=False)
-        mis.export_mission_figures(p3["solution"], params, OUT, save_figure)
+        p3_m1 = exp.run_part3_mission(params, manifold="M1", verbose=True)
+        p3_m2 = exp.run_part3_mission(params, manifold="M2", verbose=True)
+        stats = mis.export_part3_figures(p3_m1, p3_m2, params, OUT, save_figure)
+        val.print_mission_report(p3_m1["solution"], params)
+        val.print_mission_report(p3_m2["solution"], params)
+        print("Part III metrics:", stats)
     except Exception as exc:
         print(f"Part III figure export skipped: {exc}")
+        import traceback
+        traceback.print_exc()
 
     print(f"Wrote {len(os.listdir(OUT))} figures to {OUT}/")
 
