@@ -20,23 +20,29 @@ OUT = "figures/presentation"
 def _layout(fig, *, has_suptitle=False):
     """Reserve headroom so titles and suptitles are not clipped."""
     if has_suptitle:
-        fig.tight_layout(rect=[0, 0, 1, 0.84], pad=1.6)
+        fig.tight_layout(pad=1.2)
         if fig._suptitle is not None:
-            fig._suptitle.set_y(0.98)
+            tops = [ax.get_position().y1 for ax in fig.axes if ax.axison]
+            if tops:
+                fig._suptitle.set_y(min(max(tops) + 0.02, 0.99))
     else:
         fig.tight_layout(pad=1.4)
 
 
 def save_figure(fig, path, *, has_suptitle=False):
     _layout(fig, has_suptitle=has_suptitle)
-    pad = 0.55 if has_suptitle else 0.2
+    pad = 0.25 if has_suptitle else 0.2
     fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=pad)
     plt.close(fig)
 
 
 def main():
     os.makedirs(OUT, exist_ok=True)
+    os.makedirs("docs", exist_ok=True)
     t = exp.default_time_grid(params)
+
+    with open("docs/controllability_matrices.tex", "w", encoding="utf-8") as f:
+        f.write(dyn.controllability_latex_report(params, times=(0.0, 15.0)))
 
     rows = dyn.compare_along_trajectory(params)
     ts = [r["t"] for r in rows]
