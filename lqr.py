@@ -9,6 +9,8 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.linalg import solve_continuous_are
 
+import constraints as cst
+
 
 def _unpack_P(P_flat, n):
     return P_flat.reshape((n, n))
@@ -137,20 +139,56 @@ def regulation_control(t, x, dynamics_func, P_interp, Q, R, params):
     return -Rinv @ B.T @ P @ x
 
 
-def simulate_lti_closed_loop(A, B, t_grid, control_func, x0):
-    """Forward Euler / RK4 closed-loop roll-out for constant (A,B)."""
+def _eval_control(control_func, t, x, constraints=None, info=None, step=0):
+    """Evaluate control law with optional saturation and bookkeeping."""
+    u_req = np.asarray(control_func(t, x), dtype=float)
+    if constraints is None:
+        return u_req, u_req
+    u_act, saturated = cst.apply_control(u_req, t, constraints)
+    if info is not None:
+        info.control_saturated[step] = saturated
+        if info.u_req_hist is not None:
+            info.u_req_hist[step] = u_req
+    return u_act, u_req
+
+
+def _truncate_histories(x_hist, u_hist, info, k, violation_name):
+    info.state_violated = True
+    info.violation_time = float(info.violation_time) if info.violation_time else None
+    info.violation_name = violation_name
+    info.terminated_early = True
+    info.control_saturated = info.control_saturated[: k + 1]
+    if info.u_req_hist is not None:
+        info.u_req_hist = info.u_req_hist[: k + 1]
+    return x_hist[: k + 1], u_hist[: k + 1]
+
+
+def simulate_lti_closed_loop(A, B, t_grid, control_func, x0, *, constraints=None):
+    """Forward RK4 closed-loop roll-out for constant (A,B).
+
+    When ``constraints`` is set, control is saturated (PMP) and integration
+    stops at the first state constraint violation (numerical enforcement).
+    Returns (x_hist, u_hist, info).
+    """
     n = A.shape[0]
     m = B.shape[1]
     x_hist = np.zeros((len(t_grid), n))
     u_hist = np.zeros((len(t_grid), m))
+    info = cst.empty_info(len(t_grid), m) if constraints else cst.RolloutConstraintInfo()
+
     x_hist[0] = x0
-    u_hist[0] = control_func(t_grid[0], x0)
+    u_hist[0], _ = _eval_control(control_func, t_grid[0], x0, constraints, info, 0)
+
+    if constraints and (vname := cst.check_state(x0, t_grid[0], constraints)):
+        info.violation_time = t_grid[0]
+        x_hist, u_hist = _truncate_histories(x_hist, u_hist, info, 0, vname)
+        return x_hist, u_hist, cst.finalize_info(info)
 
     for k in range(len(t_grid) - 1):
         dt = t_grid[k + 1] - t_grid[k]
         t = t_grid[k]
         x = x_hist[k]
-        u = control_func(t, x)
+        u, _ = _eval_control(control_func, t, x, constraints, info, k)
         u_hist[k] = u
         k1 = A @ x + B @ u
         k2 = A @ (x + 0.5 * dt * k1) + B @ u
@@ -158,24 +196,43 @@ def simulate_lti_closed_loop(A, B, t_grid, control_func, x0):
         k4 = A @ (x + dt * k3) + B @ u
         x_hist[k + 1] = x + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
-    u_hist[-1] = control_func(t_grid[-1], x_hist[-1])
-    return x_hist, u_hist
+        if constraints and (vname := cst.check_state(x_hist[k + 1], t_grid[k + 1], constraints)):
+            u_hist[k + 1], _ = _eval_control(
+                control_func, t_grid[k + 1], x_hist[k + 1], constraints, info, k + 1
+            )
+            info.violation_time = t_grid[k + 1]
+            x_hist, u_hist = _truncate_histories(x_hist, u_hist, info, k + 1, vname)
+            return x_hist, u_hist, cst.finalize_info(info)
+
+    u_hist[-1], _ = _eval_control(control_func, t_grid[-1], x_hist[-1], constraints, info, len(t_grid) - 1)
+    return x_hist, u_hist, cst.finalize_info(info)
 
 
-def simulate_ltv_closed_loop(dynamics_func, t_grid, control_func, x0, params):
-    """RK4 closed-loop roll-out for LTV linearization."""
+def simulate_ltv_closed_loop(dynamics_func, t_grid, control_func, x0, params, *, constraints=None):
+    """RK4 closed-loop roll-out for LTV linearization.
+
+    See ``simulate_lti_closed_loop`` for constraint handling.
+    Returns (x_hist, u_hist, info).
+    """
     n = len(x0)
     m = 2
     x_hist = np.zeros((len(t_grid), n))
     u_hist = np.zeros((len(t_grid), m))
+    info = cst.empty_info(len(t_grid), m) if constraints else cst.RolloutConstraintInfo()
+
     x_hist[0] = x0
-    u_hist[0] = control_func(t_grid[0], x0)
+    u_hist[0], _ = _eval_control(control_func, t_grid[0], x0, constraints, info, 0)
+
+    if constraints and (vname := cst.check_state(x0, t_grid[0], constraints)):
+        info.violation_time = t_grid[0]
+        x_hist, u_hist = _truncate_histories(x_hist, u_hist, info, 0, vname)
+        return x_hist, u_hist, cst.finalize_info(info)
 
     for k in range(len(t_grid) - 1):
         dt = t_grid[k + 1] - t_grid[k]
         t = t_grid[k]
         x = x_hist[k]
-        u = control_func(t, x)
+        u, _ = _eval_control(control_func, t, x, constraints, info, k)
         u_hist[k] = u
         A, B = dynamics_func(t, params)
 
@@ -188,8 +245,18 @@ def simulate_ltv_closed_loop(dynamics_func, t_grid, control_func, x0, params):
         k4 = f(x + dt * k3)
         x_hist[k + 1] = x + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
-    u_hist[-1] = control_func(t_grid[-1], x_hist[-1])
-    return x_hist, u_hist
+        if constraints and (vname := cst.check_state(x_hist[k + 1], t_grid[k + 1], constraints)):
+            u_hist[k + 1], _ = _eval_control(
+                control_func, t_grid[k + 1], x_hist[k + 1], constraints, info, k + 1
+            )
+            info.violation_time = t_grid[k + 1]
+            x_hist, u_hist = _truncate_histories(x_hist, u_hist, info, k + 1, vname)
+            return x_hist, u_hist, cst.finalize_info(info)
+
+    u_hist[-1], _ = _eval_control(
+        control_func, t_grid[-1], x_hist[-1], constraints, info, len(t_grid) - 1
+    )
+    return x_hist, u_hist, cst.finalize_info(info)
 
 
 def tracking_cost(x_hist, u_hist, xref_hist, Q, R, t_grid):
