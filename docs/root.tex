@@ -281,7 +281,7 @@ $m^*(t) = m_0 e^{-\alpha g t} $
 \subsection{Numerical Implementation and LQR Tuning}
 
 \begin{itemize}
-    \item $Q$, $R$ and $Q_f$ matrix comparisons. We used heuristic methods to create a selection of $Q$, $R$, and $Q_f$ that accurately reflect underlying control intuition.
+    \item $Q$, $R$ and $Q_f$ matrix comparisons. We used heuristic methods to create a selection of $Q$, $R$, and $Q_f$ that accurately reflect underlying control intuition. Fig.~\ref{fig:placeholder_sweep} sweeps these presets on the hover LTI plant: \texttt{pos\_heavy} and \texttt{att\_heavy} tighten position and attitude transients at the cost of higher $\int u^\top R u\,dt$; \texttt{cheap\_th} and \texttt{exp\_trq} isolate thrust- versus torque-dominated effort; \texttt{balanced} is the baseline used in later parts.
 \end{itemize}
 
 \begin{table}[H]
@@ -343,7 +343,7 @@ Controllability Analysis
 \end{figure}
 
 Controllable energy in the weakest meaningful mode shrinks as 
-$t_f - t$ shrinks, especially for horizontal motion (as shown by the proxy).
+$t_f - t$ shrinks, especially for horizontal motion (as shown by the proxy). Both trims are algebraically full rank ($7/7$), but the descent LTV plant at $t=15$~s shows larger $B$-column entries for $v_z$ and weaker indirect authority on $p_x$ (horizontal acceleration enters only through attitude coupling), which is the physical origin of the ``weakly controllable'' label.
 
 
 \begin{itemize}
@@ -711,17 +711,11 @@ The reference $x_{\text{ref}}(t)$ is one of the optimal regulation trajectories 
 
 \end{itemize}
 
-\subsection{Discussion: Unknown Reference Trajectory}
+Compared with Part~I regulation, the tracking problem replaces $Q_f x(t_f)$ with $P(t_f)=s(t_f)=0$ and adds the feedforward $u_{ff}(t)$; the feedback structure is unchanged, but the controller must expend far more effort to ``catch up'' from a displaced initial state.
 
-What if the reference trajectory is not known in advance? The present design is fundamentally \emph{non-causal}: the feedforward $s(t)$ is obtained by integrating $\dot{s} = -(A^\top - PBR^{-1}B^\top)\,s + Q\,x_{\text{ref}}$ \emph{backward} from $s(t_f)=0$, which requires the entire future reference $\{x_{\text{ref}}(\tau): \tau \in [t, t_f]\}$ to be available at the current time $t$. Three challenges follow directly:
+\subsubsection*{Unknown Reference Trajectory}
 
-\begin{itemize}
-    \item \textbf{Loss of anticipation.} If only the present (or causally measured) reference is known, $s(t)$ cannot be computed and the controller collapses to pure feedback $u = -K(t)\,e(t)$. This still stabilizes the error dynamics, but it lags a time-varying reference and incurs larger transient and steady tracking error, since the anticipatory term that pre-positions the control is gone.
-    \item \textbf{Sensitivity to reference model error.} As Fig.~\ref{fig:p2_ref_noise} shows, the feedforward is only as good as the assumed plan: errors in $x_{\text{ref}}$ propagate into a wrong $s(t)$ and degrade cost even when terminal accuracy is preserved. An online-estimated or predicted reference inherits this sensitivity.
-    \item \textbf{No replanning.} The finite-horizon Riccati pair is computed once for a fixed $[0,t_f]$ and a fixed plan; it cannot react to a reference that is revealed, revised, or re-targeted online.
-\end{itemize}
-
-These limitations motivate causal alternatives that the present formulation does not provide: a receding-horizon (model-predictive) reformulation that re-solves the tracking problem over a moving window as new reference information arrives, a causal reference model/observer that predicts $x_{\text{ref}}$ ahead, or a feedforward driven by an online reference generator. Each restores anticipation at the cost of repeated online optimization.
+The present law is non-causal: $s(t)$ comes from a backward integration that requires the entire future $x_{\text{ref}}(\tau)$ on $[t,t_f]$. Without that preview, only $u=-K(t)e(t)$ remains---stable, but lagging and costlier. Fig.~\ref{fig:p2_ref_noise} shows that reference error propagates into $s(t)$ and inflates cost even when feedback preserves terminal accuracy. A causal fix would replan online (e.g.\ receding-horizon MPC) or generate $x_{\text{ref}}$ from a predictive model.
 
 \subsection{Validation}
 
@@ -778,6 +772,8 @@ U_{\min, i} & \text{if } S_i(t) > 0
 \end{cases}
 \]
 
+No singular arcs arise on thrust ($S_{\delta T}$ has one sign change). The torque channel is structurally singular for this vertical ascent ($S_\tau=p_\omega/I\equiv0$ with $\theta=\omega=0$), so $\tau^\star=0$ throughout.
+
 \[H_A(t) \equiv 0 \implies 1 + p(t)^\top \big(Ax(t) + Bu^*(t)\big) = 0 \quad \forall t \in [0, t_1]\]
 
 \subsubsection*{Endpoint and Free-Final-Time Conditions}
@@ -793,19 +789,11 @@ Because $t_1$ is free, the minimum-time transversality condition closes the syst
 
 \subsubsection*{Implementation}
 
-The Phase~A two-point boundary value problem is solved by indirect single shooting: the combined state--costate system $(\dot{x}=Ax+Bu^\star,\ \dot{p}=-A^\top p)$ is integrated with the bang--bang thrust law, and the eight endpoint residuals above are driven to zero by a multi-start Levenberg--Marquardt least-squares solve. The torque switching function $S_\tau=(B^\top p)_2=p_\omega/I$ is identically singular for the vertical ascent (the rotational subsystem starts and ends at $\theta=\omega=0$ and is decoupled), so the optimal torque is the trim value $\tau^\star=0$ and the only active bang--bang channel is the thrust deviation $\delta T$. The rendezvous target is $x_{sky}=(0,\,p_{z,sky},\,0,\,v_{z,sky},\,0,\,0)$ with $p_{z,sky}=8$~m; the terminal vertical velocity $v_{z,sky}\in\{-2,0,+2\}$~m/s is swept for the comparison required by the problem statement.
+Phase~A is solved by indirect single shooting (\texttt{mission.py}). The decision vector is $Z=[p(0);\,t_1]\in\mathbb{R}^8$; each candidate is propagated forward with \texttt{solve\_ivp} (RK45) on the $14$-dimensional state--costate system using the bang--bang law above, and the eight residuals $\{x_{1:6}(t_1)-x_{sky,1:6},\,p_m(t_1),\,H_A(t_1)\}$ are driven below $10^{-5}$ by \texttt{scipy.optimize.least\_squares} with $12$ random multi-starts and $t_1\in[0.3,\,5]$~s. Controls enter the right-hand side as saturated PMP minimisers; $\tau^\star=0$ because $S_\tau$ is singular for the decoupled vertical ascent. The rendezvous is $x_{sky}=(0,\,8,\,0,\,v_{z,sky},\,0,\,0,\,0)^\top$ (hover-deviation coordinates) with $v_{z,sky}\in\{-2,0,+2\}$~m/s for the required terminal-velocity comparison.
 
 \subsubsection*{Ascent Trajectory Results}
 
-Why thrust saturation appears.
-
-How mass depletion changes control authority during flight.
-
-How the switching structure evolves over time.
-
-Whether the optimal strategy front-loads or back-loads energy consumption.
-
-Note that the behavior largely depends on the choice of $x_{sky}$. Choose the terminal velocity to be zero versus it is positive/negative and compare.
+Fig.~\ref{fig:p3_phaseA_vz} shows bang--bang thrust with exactly one switch in every case: maximum $\delta T$ accelerates upward until $S_{\delta T}=(B^\top p)_1$ changes sign, then minimum thrust completes the rendezvous. Thrust saturates because time appears linearly in $J_A$ with no control penalty. Ascent time depends strongly on $v_{z,sky}$ ($t_1=2.39$, $2.16$, and $1.98$~s for $-2$, $0$, and $+2$~m/s); the switch occurs late in the arc ($\approx59$--$71\%$ of $t_1$), so deceleration to the target speed is back-loaded. Propellant use is nearly unchanged ($\approx2.08$~kg) because the maneuver is short; mass depletion is too small over $\sim2$~s to materially change $1/m$ and control authority.
 
 \begin{figure}[H]
     \centering
@@ -943,20 +931,26 @@ The free-final-time landing problem is solved as a true indirect PMP boundary va
 
 \subsubsection*{Landing Manifold Comparison}
 
+Both missions share Phase~A, $x_{sky}$, and the horizontal footprint; only the Phase~B terminal manifold differs (Fig.~\ref{fig:p3_overlay}). Fig.~\ref{fig:p3_comparison} and Table~\ref{tab:val_p3} summarise the five comparison axes:
+
 \begin{itemize}
-    \item Landing time 
-    \item Energy consumption 
-    \item Switching structure
-    \item Terminal sensitivity
-    \item Feasibility
+    \item \textit{Landing time.} M2 completes the mission sooner: $t_f=7.32$~s versus $8.10$~s for M1 ($\Delta t_f\approx0.78$~s, Table~\ref{tab:val_p3}). Phase~B alone is also shorter ($5.16$ vs.\ $5.94$~s) because touchdown at the platform apex $(0,r)=(0,5)$~m avoids the long final vertical flare required to reach $p_z=0$ on flat ground.
+
+    \item \textit{Energy consumption.} Despite the shorter clock time, M2 costs more control energy: $\int_{t_1}^{t_f} u^\top R u\,dt \approx 526$ versus $216$ for M1 ($\approx2.4\times$, Table~\ref{tab:val_p3}). The lofted descent arc and stronger horizontal--vertical coordination dominate the energy budget.
+
+    \item \textit{Switching structure.} Phase~A is identical in both cases (one bang--bang thrust switch at $t_1=2.16$~s). Phase~B uses smooth saturated costate feedback in both manifolds---no further bang--bang arcs. Fig.~\ref{fig:p3_switching} shows similar overall control profiles, with M2 displaying larger mid-descent $\delta T$ and $\tau$ activity to steer onto the curved approach.
+
+    \item \textit{Terminal sensitivity.} Perturbing the Phase~A$\to$B handoff state by $\pm0.05$ on each component (holding the optimal costate and $t_f$ fixed) raises the worst-case terminal residual to $\sim51$ for M1 but $\sim1.9\times10^3$ for M2. The sphere constraint and collinearity condition $p_{p_x}(t_f)\,p_z(t_f)=p_{p_z}(t_f)\,(p_x(t_f)-p_c)$ tightly couple position and costate at touchdown on M2.
+
+    \item \textit{Feasibility.} Both scenarios satisfy $p_z\ge0$ along the trajectory, converge with $\lVert res\rVert_\infty\sim6.2\times10^{-8}$ (below the $10^{-5}$ target), and meet the terminal manifold and $H_B(t_f)=0$ residuals in Table~\ref{tab:val_p3}. Touchdown occurs at $(0,0)$ and $(0,5)$~m as intended.
 \end{itemize}
 
-How the geometry of the terminal manifold affects the resulting optimal trajectory and control structure.
+\textit{Effect of manifold geometry.} Flat ground $M_1=\{p_z=0,\,v_z=0,\,\theta=0\}$ allows a nearly vertical descent over the shared footprint (Fig.~\ref{fig:p3_traj}, left). The platform manifold $M_2=\{h_1(x)=0,\,v_z=0,\,\theta=0\}$ replaces the altitude fix with the sphere $h_1=(p_x-p_c)^2+p_z^2-r^2=0$, forcing a bowed trajectory that intercepts the surface along its outward normal at the apex; transversality requires the position costate to align with that normal. The resulting arc demands sustained lateral thrust and attitude correction through Phase~B (Fig.~\ref{fig:p3_traj}, right), which---together with the higher $Q$ weights used for M2---explains the shorter but energetically costlier landing relative to M1.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\linewidth]{figures/p3_manifold_comparison.png}
-    \caption{M1 vs M2 comparison along the five required axes: total landing time $t_f$, Phase~B duration, Phase~B control energy $\int u^\top R u\,dt$, Phase~A thrust switches, shooting feasibility $\lVert res\rVert_\infty$ (against the $10^{-5}$ target), and terminal sensitivity to $\pm\delta x_0$ handoff perturbations.}
+    \caption{M1 vs M2 comparison: total landing time $t_f$, Phase~B duration, Phase~B control energy $\int u^\top R u\,dt$, Phase~A thrust switches, shooting feasibility $\lVert res\rVert_\infty$, and terminal sensitivity to $\pm0.05$ handoff perturbations.}
     \label{fig:p3_comparison}
 \end{figure}
 
@@ -989,7 +983,7 @@ Touchdown $(p_x,p_z)$ [m] & $(0,0)$ & $(0,5)$ \\
 \begin{figure}[H]
     \centering
     \includegraphics[width=\linewidth]{figures/p3_hamiltonian.png}
-    \caption{Hamiltonian evolution}
+    \caption{Hamiltonian consistency: $H_A\equiv0$ on Phase~A (minimum time) and $H_B\equiv0$ on Phase~B (free final time), both to numerical tolerance.}
     \label{fig:p3_hamiltonian}
 \end{figure}
 
@@ -1112,68 +1106,65 @@ The Part~IV problem is solved in hover-deviation coordinates ($x$ is the deviati
 
 \subsection{Analysis}
 
-The following 3 simulation scenarios will be compared:
-\begin{itemize}
-    \item - linear optimal controller on the linearized dynamics
-    \item - the same controller on the nonlinear dynamics
-    \item - nonlinear optimal controller on the nonlinear dynamics.
-\end{itemize}
+Three scenarios share $x_0=[1,\,1.5,\,0.4,\,-0.25,\,0.12,\,0,\,0.05]^\top$ and $t_f=4$~s: (1)~LQR on the LTI plant, (2)~the same LQR law on the nonlinear plant, and (3)~nonlinear PMP/collocation on the nonlinear plant with an LQR warm start.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\linewidth]{figures/p4_state_trajectories.png}
-    \caption{Trajectory comparisons (position, velocity, attitude, and mass trajectories)}
+    \caption{State trajectories for the three scenarios.}
     \label{fig:p4_traj_comp}
 \end{figure}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.5\linewidth]{figures/p4_mission_plane_quiver.png}
-    \caption{Trajectory comparisons (px vs pz)}
+    \caption{Mission plane $p_x$ vs.\ $p_z$ with attitude vectors.}
     \label{fig:p4_traj_comp2}
 \end{figure}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\linewidth]{figures/p4_control_histories.png}
-    \caption{Control histories (thrust and torque histories)}
+    \caption{Thrust and torque histories.}
     \label{fig:p4_control_hist}
 \end{figure}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\linewidth]{figures/p4_energy_comparison.png}
-    \caption{Energy consumption: control effort $J_u=\int u^\top R u\,dt$ and total cost $J$ for the three scenarios.}
+    \caption{Control effort $J_u=\int u^\top R u\,dt$ and total cost $J$.}
     \label{fig:p4_energy}
 \end{figure}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\linewidth]{figures/p4_terminal_behavior.png}
-    \caption{Terminal error comparisons (terminal state norm and components).}
+    \caption{Terminal state norm and components at $t_f$.}
     \label{fig:p4_term_behav}
 \end{figure}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\linewidth]{figures/p4_convergence.png}
-    \caption{Convergence behavior: interior collocation residual of the converged TPBVP and solver sensitivity of the achieved boundary residual / mesh size to the requested tolerance.}
+    \caption{Collocation convergence and tolerance sensitivity.}
     \label{fig:p4_conv_behav}
 \end{figure}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\linewidth]{figures/p4_theta_sensitivity.png}
-    \caption{Solver sensitivity: control effort and PMP-vs-LQR savings as the initial pitch deviation $\theta_0$ is scaled.}
+    \caption{Control effort and PMP savings vs.\ scaled initial pitch $\theta_0$.}
     \label{fig:p4_solver_sens}
 \end{figure}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\linewidth]{figures/p4_terminal_residual.png}
-    \caption{Terminal residual analysis: per-component TPBVP boundary residuals (initial match and free-endpoint transversality $p(t_f)=2Q_f x(t_f)$) and the optimality-residual summary.}
+    \caption{Per-component TPBVP boundary and optimality residuals.}
     \label{fig:p4_term_resid}
 \end{figure}
+
+Figs.~\ref{fig:p4_traj_comp}--\ref{fig:p4_traj_comp2} show scenarios~(1) and (2) agree early but diverge as $\theta$ and $m$ evolve; the nonlinear PMP solution trims peak $p_z$ and $\theta$ by exploiting $\sin\theta$ and $T/m$ coupling. The linear law over-commands on the true plant (Fig.~\ref{fig:p4_control_hist}), raising $J_u$ from $13.2$ to $42.9$ while PMP recovers $39.4$ ($\approx8\%$ savings) and lowers total $J$ by $41\%$ vs.\ scenario~(2) (Fig.~\ref{fig:p4_energy}). Terminal norms tighten under PMP (Fig.~\ref{fig:p4_term_behav}). Collocation converges in few refinements from the LQR seed (Fig.~\ref{fig:p4_conv_behav}); the PMP advantage grows with initial pitch (Fig.~\ref{fig:p4_solver_sens}). Boundary residuals meet the $10^{-6}$ target (Fig.~\ref{fig:p4_term_resid}). The linear approximation remains accurate for small attitude/mass deviations over $4$~s; it breaks down once thrust--gravity resolution and mass depletion accumulate.
 
 \subsection{Validation}
 
