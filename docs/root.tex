@@ -5,42 +5,47 @@
 \documentclass[letterpaper, 10 pt, conference]{ieeeconf} 
 
 \IEEEoverridecommandlockouts % This command is only needed if you want to use the \thanks command
-\overrideIEEEmargins   % Needed to meet printer requirements.
+\overrideIEEEmargins         % Needed to meet printer requirements.
 
-%In case you encounter the following error:
-%Error 1010 The PDF file may be corrupt (unable to open PDF file) OR
-%Error 1000 An error occurred while parsing a contents stream. Unable to analyze the PDF file.
-%This is a known problem with pdfLaTeX conversion filter. The file cannot be opened with acrobat reader
-%Please use one of the alternatives below to circumvent this error by uncommenting one or the other
-%\pdfobjcompresslevel=0
 \pdfminorversion=4
 
-% See the \addtolength command later in the file to balance the column lengths on the last page of the document
-
-% The following packages can be found on http:\\www.ctan.org
+% --- Packages ---
 \usepackage[T1]{fontenc}
 \usepackage{url}
 \usepackage{cite}
-\usepackage{graphicx} % for pdf, bitmapped graphics files
-\usepackage{amsmath} % assumes amsmath package installed
-\usepackage{amssymb}  % assumes amsmath package installed
+\usepackage{graphicx} 
+\usepackage{amsmath} 
+\usepackage{amssymb}  
 \usepackage{tabularx}
 \usepackage{float}
-\usepackage{mdwlist}
 \usepackage{subcaption}
 \usepackage{booktabs}
-\usepackage{enumitem}
 \usepackage{array} 
 \usepackage{threeparttable}
-\usepackage{epsfig} % for postscript graphics files
-\usepackage{mathptmx} % assumes new font selection scheme installed
-\usepackage{times} % assumes new font selection scheme installed
+\usepackage{epsfig} 
+\usepackage{mathptmx} 
+\usepackage{times} 
 
-% --- Global Table Spacing Adjustments ---
-\setlength{\floatsep}{8pt plus 2pt minus 2pt}       % Space between adjacent floats (e.g., two tables stacked)
-\setlength{\textfloatsep}{10pt plus 2pt minus 4pt}  % Space between a top/bottom float and the main text
-\setlength{\intextsep}{8pt plus 2pt minus 2pt}      % Space above and below an [H] or [h] "here" float
-\captionsetup{skip=4pt}                             % Space between the caption and the table body
+% --- Global Table & Float Spacing Adjustments ---
+\setlength{\floatsep}{8pt plus 2pt minus 3pt}       
+\setlength{\textfloatsep}{10pt plus 2pt minus 4pt}  
+\setlength{\intextsep}{8pt plus 2pt minus 3pt}      
+\captionsetup{skip=4pt}       
+
+% --- Universal Spacing Reductions for Display Math (\[ ... \]) ---
+\AtBeginDocument{
+  \setlength{\abovedisplayskip}{2pt plus 1pt minus 1pt}
+  \setlength{\belowdisplayskip}{2pt plus 1pt minus 1pt}
+  \setlength{\abovedisplayshortskip}{0pt plus 1pt}
+  \setlength{\belowdisplayshortskip}{0pt plus 1pt}
+}
+
+% --- Global Hierarchical List Adjustments (Bullet-less Native IEEE Fix) ---
+% This safely removes the bullet symbols without requiring external packages that crash IEEE templates.
+\renewcommand{\labelitemi}{}
+\renewcommand{\labelitemii}{}
+\renewcommand{\labelitemiii}{}
+\renewcommand{\labelitemiv}{}
 
 \title{\LARGE \bf Optimal Control of a Variable-Mass Thrust-Vectoring Lander*}
 
@@ -50,12 +55,7 @@
         University of California, Los Angeles, 405 Hilgard Avenue, Los Angeles, CA 90095
         {\tt\small nzge@g.ucla.edu}} }
 
-
-
 \begin{document}
-
-
-
 
 \maketitle
 \thispagestyle{empty}
@@ -63,30 +63,26 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{abstract}
-This project studies the optimal guidance and control of a planar variable-mass rocket/lander with translational and rotational dynamics, bounded controls, nonlinear coupling, free-final-time optimal control, endpoint manifold constraints, and trajectory tracking. The project combines Pontryagin’s Maximum Principle (PMP), controllability analysis, Linear Quadratic Regulation (LQR), minimum-time optimal control, nonlinear indirect optimal control, and numerical two-point boundary
-value problem (TPBVP) solvers. The project is inspired by powered-descent guidance and reusable rocket landing systems studied in modern aerospace optimal control literature. All theoretical derivations must be based on PMP. Numerical implementations may use indirect shooting, multiple shooting, continuation or homotopy. 
-methods, and indirect/direct hybrid approaches, provided that the optimality conditions are derived from PMP.
+This project studies the optimal guidance and control of a planar variable-mass rocket/lander with translational and rotational dynamics, bounded controls, nonlinear coupling, free-final-time optimal control, endpoint manifold constraints, and trajectory tracking. The project combines Pontryagin’s Maximum Principle (PMP), controllability analysis, Linear Quadratic Regulation (LQR), minimum-time optimal control, nonlinear indirect optimal control, and numerical two-point boundary value problem (TPBVP) solvers. The project is inspired by powered-descent guidance and reusable rocket landing systems studied in modern aerospace optimal control literature. All theoretical derivations must be based on PMP. Numerical implementations may use indirect shooting, multiple shooting, continuation or homotopy methods, and indirect/direct hybrid approaches, provided that the optimality conditions are derived from PMP.
 \end{abstract}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \section{Problem Formulation}
 
 The state space of the lander can be represented as: 
-\vspace{-3pt}
-$$x = \begin{bmatrix} p_x & p_z & v_x & v_z & \theta & \omega & m \end{bmatrix}^\top, \quad u = \begin{bmatrix} \delta T & \tau \end{bmatrix}^\top$$
 
-\vspace{-10 pt}
+\[
+x = \begin{bmatrix} p_x & p_z & v_x & v_z & \theta & \omega & m \end{bmatrix}^\top, \quad u = \begin{bmatrix} \delta T & \tau \end{bmatrix}^\top
+\]
 
 \begin{table}[H]
     \centering
     \label{tab:parameters}
-    \renewcommand{\arraystretch}{1.2} % Adds breathing room between rows
-    % The @{} removes the default padding at the left and right edges
+    \renewcommand{\arraystretch}{1.2} 
     \begin{tabular}{@{} l p{0.65\linewidth} @{}}
         \toprule
-        \textbf{Symbol} & \textbf{Description} \\
+        Symbol & Description \\
         \midrule
-        
         \multicolumn{2}{@{}l}{\textit{State Variables ($x$)}} \\
         $p_x, p_z$      & Horizontal and vertical position \\
         $v_x, v_z$      & Horizontal and vertical velocity \\
@@ -94,18 +90,16 @@ $$x = \begin{bmatrix} p_x & p_z & v_x & v_z & \theta & \omega & m \end{bmatrix}^
         $\omega$        & Angular velocity (pitch rate) \\
         $m$             & Instantaneous vehicle mass \\
         \midrule
-        
         \multicolumn{2}{@{}l}{\textit{Control Variables ($u$)}} \\
         $T$             & Commanded thrust magnitude \\
         $\tau$          & Commanded control torque \\
-    
         \bottomrule
     \end{tabular}
 \end{table}
 
 The nonlinear equations of motion governing the lander, $\dot{x} = f(x, u)$, are defined by its kinematics, gravity, thrust resolution, and mass depletion rate.
 
-\begin{equation}
+\[
     \dot{x} =
     \begin{bmatrix}
         v_x \\
@@ -116,7 +110,7 @@ The nonlinear equations of motion governing the lander, $\dot{x} = f(x, u)$, are
         \frac{\tau}{I} \\
         -\frac{T}{I_{sp} g_0}
     \end{bmatrix}
-\end{equation}
+\]
 
 \begin{table}[H]
     \centering
@@ -125,30 +119,27 @@ The nonlinear equations of motion governing the lander, $\dot{x} = f(x, u)$, are
     \renewcommand{\arraystretch}{1.2}
     \begin{tabular}{@{} l p{0.65\linewidth} @{}}
         \toprule
-        \textbf{Mathematical Constraint} & \textbf{Description} \\
+        Mathematical Constraint & Description \\
         \midrule
-        
         \multicolumn{2}{@{}l}{\textit{Control Constraints}} \\
         $T \in [T_{\text{min}}, T_{\text{max}}]$ & Actuator bounds on thrust magnitude \\
         $\tau \in [\tau_{\text{min}}, \tau_{\text{max}}]$ & Actuator bounds on control torque \\
         \midrule
-        
         \multicolumn{2}{@{}l}{\textit{Numerically Enforced State Constraints}} \\
         $p_z(t) \geq 0$ & Hard deck limit preventing subsurface flight \\
         $m(t) \geq m_{\text{dry}}$ & Minimum mass limit (dry mass) \\
         \bottomrule
-        
     \end{tabular}
 \end{table}
 
 \begin{table}[H]
     \centering
-    \caption{Suggested System Parameters}
+    \caption{System Parameters}
     \label{tab:system_parameters}
     \renewcommand{\arraystretch}{1.2}
     \begin{tabular}{@{} l c p{0.5\linewidth} @{}}
         \toprule
-        \textbf{Symbol} & \textbf{Value} & \textbf{Description} \\
+        Symbol & Value & Description \\
         \midrule
         $g$ & $9.81 \text{ m/s}^2$ & Gravitational acceleration \\
         $I$ & $10 \text{ kg}\cdot\text{m}^2$ & Vehicle moment of inertia \\
@@ -162,27 +153,25 @@ The nonlinear equations of motion governing the lander, $\dot{x} = f(x, u)$, are
     \end{tabular}
 \end{table}
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Numerical Methodology}
 
 \subsection{Linear Systems Solver: The Sweep Method (Parts I \& II)}
-$scipy.integrate.solve_ivp$ was used to integrate the Riccati equation backward in time to generate the feedback gain matrix $K(t)$. An interpolator was then used on this gain during the forward-pass simulation of the state trajectory.
+$scipy.integrate.solve\_ivp$ integrates the Riccati equation backward in time to generate the feedback gain matrix $K(t)$. An interpolator was then used on this gain during the forward-pass simulation of the state trajectory.
 
 \subsection{Nonlinear TPBVP Solvers (Parts III \& IV)}
-The Riccati substitution fails for nonlinear dynamics. I used Indirect Shooting using to tackle the coupled state/costate equations.
+The Riccati substitution fails for nonlinear dynamics. Indirect Shooting was used to tackle the coupled state/costate equations.
 
 \subsection{Constraint Enforcement Strategies}
 
 \begin{itemize}
-    \item Control Constraints ($T, \tau$): Thrust limits were handled differently for linear and nonlinear phases. For the linear phases, I applied post-calculation saturation (clipping the LQR commanded thrust). For the nonlinear phases, PMP mathematically handles the bounds or how you passed them as boundary arrays to a collocation solver.
+    \item Control Constraints ($T, \tau$): For the linear case, I applied post-calculation saturation (clipping the LQR commanded thrust). For nonlinear phases, PMP mathematically handles the bounds or how you passed them as boundary arrays to a collocation solver.
     \item State Constraints ($p_z \ge 0$, $m \ge m_{dry}$): Adjoining state constraints directly to the PMP Hamiltonian creates severe analytical difficulties (jump discontinuities in the costates). The numerical workaround is to either:
     \begin{itemize}
-        \item Apply "Soft Constraints" (adding massive penalties to your $Q$ matrix if the rocket goes underground)
+        \item "Soft Constraints" (adding massive penalties to your $Q$ matrix if the rocket goes underground)
         \item "Event Tracking" (terminating the ODE solver upon impact)
-        \item direct constraint arrays in an NLP solver.
+        \item Direct constraint arrays in an NLP solver.
     \end{itemize}
-   
 \end{itemize}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -192,20 +181,18 @@ The Riccati substitution fails for nonlinear dynamics. I used Indirect Shooting 
 
 \subsection{Phase Formulation}
 
-Linearization: The linearized model plant is formulated as $\dot{x}=Ax+Bu$ where $A = \frac{\partial f}{\partial x}$, $B = \frac{\partial f}{\partial u}$, and $f(x,u) = x$ 
-
-
+Linearization: The linearized model plant is formulated as $\dot{x}=Ax+Bu$ where $A = \frac{\partial f}{\partial x}$, $B = \frac{\partial f}{\partial u}$, and $f(x,u) = \dot{x}$.
 
 \begin{itemize}
     \item Hover
-\begin{equation*}
+\[
 \setlength{\arraycolsep}{2.5pt}
 \renewcommand{\arraystretch}{0.9}
 A_{\text{hover}} = \begin{bmatrix} 
 0 & 0 & 1 & 0 & 0 & 0 & 0 \\ 
 0 & 0 & 0 & 1 & 0 & 0 & 0 \\ 
 0 & 0 & 0 & 0 & g & 0 & 0 \\ 
-0 & 0 & 0 & 0 & 0 & 0 & \frac{-g}{m_0} \\ 
+0 & 0 & 0 & 0 & 0 & 0 & -\frac{g}{m_0} \\ 
 0 & 0 & 0 & 0 & 0 & 1 & 0 \\ 
 0 & 0 & 0 & 0 & 0 & 0 & 0 \\ 
 0 & 0 & 0 & 0 & 0 & 0 & 0 
@@ -219,17 +206,17 @@ B_{\text{hover}} = \begin{bmatrix}
 0 & I^{-1} \\ 
 -\alpha & 0 
 \end{bmatrix}
-\end{equation*}
+\]
 
 \item Descent
-\begin{equation*}
+\[
 \setlength{\arraycolsep}{2.5pt}
 \renewcommand{\arraystretch}{0.9}
 A(t) = \begin{bmatrix} 
 0 & 0 & 1 & 0 & 0 & 0 & 0 \\ 
 0 & 0 & 0 & 1 & 0 & 0 & 0 \\ 
 0 & 0 & 0 & 0 & g & 0 & 0 \\ 
-0 & 0 & 0 & 0 & 0 & 0 & \frac{-g}{m^*(t)} \\ 
+0 & 0 & 0 & 0 & 0 & 0 & -\frac{g}{m^*(t)} \\ 
 0 & 0 & 0 & 0 & 0 & 1 & 0 \\ 
 0 & 0 & 0 & 0 & 0 & 0 & 0 \\ 
 0 & 0 & 0 & 0 & 0 & 0 & 0 
@@ -245,54 +232,54 @@ A(t) = \begin{bmatrix}
 -\alpha & 0 
 \end{bmatrix}
 \end{aligned}
-\end{equation*}
+\]
 
 $m^*(t) = m_0 e^{-\alpha g t} $
 \end{itemize}
-
 
 \subsection{Analytical Derivations (PMP)}
 
 \begin{itemize}
     \item Hamiltonian construction
-$$H(x, u, p) = L(x, u) + p^\top f(x, u)$$ 
-    \begin{center} where $L(x,u)=x^\top Qx + u^\top Ru$ \end{center}
-$$H(x, u, p) = x^\top Q x + u^\top R u + p^\top (Ax + Bu)$$
+    \[H(x, u, p) = L(x, u) + p^\top f(x, u)\] 
+    \vspace{2pt}\centerline{where $L(x,u)=x^\top Qx + u^\top Ru$}\vspace{2pt}
+    \[H(x, u, p) = x^\top Q x + u^\top R u + p^\top (Ax + Bu)\]
+    
     \item Transversality
-$$p(t_f) = \frac{\partial \phi}{\partial x}\bigg|_{t=t_f}$$
-$$p(t_f) = 2 Q_f x(t_f) $$
+    \[p(t_f) = \frac{\partial \phi}{\partial x}\bigg|_{t=t_f}\]
+    \[p(t_f) = 2 Q_f x(t_f) \]
+    
     \item Adjoint Equations (costate dynamics)
-$$\dot{p} = -\frac{\partial H}{\partial x}$$Using matrix calculus (and the symmetry of $Q$):$$\dot{p} = -\big( 2 Q x + A^\top p \big) = -2 Q x - A^\top p $$
+    \[\dot{p} = -\frac{\partial H}{\partial x}\]
+    Using matrix calculus (and the symmetry of $Q$):
+    \[\dot{p} = -\big( 2 Q x + A^\top p \big) = -2 Q x - A^\top p \]
+    
     \item Stationarity Conditions
-$$\frac{\partial H}{\partial u} = 0$$
-$$2 R u + B^\top p = 0$$
-$$u^* = -\frac{1}{2} R^{-1} B^\top p $$
+    \[\frac{\partial H}{\partial u} = 0 \implies 2 R u + B^\top p = 0 \implies u^* = -\frac{1}{2} R^{-1} B^\top p \]
+    
     \item Riccati Differential equation
-
-Assumption (Riccati Substitution): $$p(t) = P(t)x(t)$$ Where $P(t)$ is an unknown, time-varying symmetric matrix. Differentiate the assumption. Using the product rule:$$\dot{p} = \dot{P}x + P\dot{x}$$
-
-Substitute $\dot{p}$ and $\dot{x}$ (the dynamics). $$-2Qx - A^\top P x = \dot{P}x + P(Ax + Bu^*)$$
-
-Substitute the optimal control $u^*$. Remembering that $p = Px$, becomes $u^* = -\frac{1}{2} R^{-1} B^\top P x$. 
-$$-2Qx - A^\top P x = \dot{P}x + P\left(Ax - \frac{1}{2} B R^{-1} B^\top P x\right)$$
-$$-2Qx - A^\top P x = \dot{P}x + PAx - \frac{1}{2} P B R^{-1} B^\top P x$$
-
-Group all terms multiplying $x(t)$. Move everything to one side of the equation:$$\left[ \dot{P} + P A + A^\top P - \frac{1}{2} P B R^{-1} B^\top P + 2Q \right] x = 0$$
-
-Because this equation must hold true for any arbitrary state trajectory $x(t)$, the bracketed matrix expression must identically equal zero. Setting the bracket to zero yields the Riccati Differential Equation (RDE): $$\boxed{\dot{P} = -P A - A^\top P + \frac{1}{2} P B R^{-1} B^\top P - 2Q}$$
-
-\item Optimal State-feedback law
-$$P(t_f) = 2 Q_f$$
-$$u^*(t) = -K(t) x(t)$$
-$$K(t) = \frac{1}{2} R^{-1} B^\top P(t)$$
+    Assumption (Riccati Substitution): 
+    \[p(t) = P(t)x(t)\] 
+    Where $P(t)$ is an unknown, time-varying symmetric matrix. Differentiate the assumption using the product rule:
+    \[\dot{p} = \dot{P}x + P\dot{x}\]
+    Substitute $\dot{p}$ and $\dot{x}$ (the dynamics).
+    \[-2Qx - A^\top P x = \dot{P}x + P(Ax + Bu^*)\]
+    Substitute the optimal control $u^*$. Remembering that $p = Px$, it becomes $u^* = -\frac{1}{2} R^{-1} B^\top P x$.
+    \[-2Qx - A^\top P x = \dot{P}x + P\left(Ax - \frac{1}{2} B R^{-1} B^\top P x\right)\]
+    \[-2Qx - A^\top P x = \dot{P}x + PAx - \frac{1}{2} P B R^{-1} B^\top P x\]
+    Group all terms multiplying $x(t)$. Move everything to one side of the equation:
+    \[\left[ \dot{P} + P A + A^\top P - \frac{1}{2} P B R^{-1} B^\top P + 2Q \right] x = 0\]
+    Because this equation must hold true for any arbitrary state trajectory $x(t)$, the bracketed matrix expression must identically equal zero. Setting the bracket to zero yields the Riccati Differential Equation (RDE): 
+    \[\boxed{\dot{P} = -P A - A^\top P + \frac{1}{2} P B R^{-1} B^\top P - 2Q}\]
+    
+    \item Optimal State-feedback law
+    \[P(t_f) = 2 Q_f, \quad u^*(t) = -K(t) x(t), \quad K(t) = \frac{1}{2} R^{-1} B^\top P(t)\]
 \end{itemize}
-
 
 \subsection{Numerical Implementation and LQR Tuning}
 
 \begin{itemize}
-    \item $Q$, $R$ and $Q_f$ matrix comparisons. 
-    We used heuristic methods to create a selection of $Q$, $R$, and $Q_f$ that accurately reflect underlying control intuition.
+    \item $Q$, $R$ and $Q_f$ matrix comparisons. We used heuristic methods to create a selection of $Q$, $R$, and $Q_f$ that accurately reflect underlying control intuition.
 \end{itemize}
 
 \begin{table}[H]
@@ -300,13 +287,11 @@ $$K(t) = \frac{1}{2} R^{-1} B^\top P(t)$$
   \caption{Part~I.5.5 cost presets (diagonal $Q$, $R$, $Q_f$).}
   \label{tab:part1-cost-compact}
   \small
-  \setlength{\tabcolsep}{2.5pt} % Tightens padding before scaling
-  
-  % This forces the inner content to scale down to the exact column width
+  \setlength{\tabcolsep}{2.5pt} 
   \resizebox{\linewidth}{!}{% 
     \begin{tabular}{@{}l ccc@{}} 
       \toprule
-      \textbf{Preset} & $Q=\mathrm{diag}(\cdot)$ & $R$ & $Q_f=\mathrm{diag}(\cdot)$ \\
+      Preset & $Q=\mathrm{diag}(\cdot)$ & $R$ & $Q_f=\mathrm{diag}(\cdot)$ \\
       \midrule
       balanced        & $(1,1,0.5,0.5,10,5,0.01)$       & $(0.1,1)$  & $(10,10,1,1,50,20,0.1)$ \\
       pos\_heavy      & $(20,20,2,2,5,2,0.01)$          & $(0.1,1)$  & $(50,50,5,5,20,10,0.1)$ \\
@@ -315,228 +300,226 @@ $$K(t) = \frac{1}{2} R^{-1} B^\top P(t)$$
       exp\_trq        & $(1,1,0.5,0.5,10,5,0.01)$       & $(0.1,10)$ & $(10,10,1,1,50,20,0.1)$ \\
       scaled\_id      & $(10^{-2},10^{-2},0.04,0.04,25,4,1)$ & $(1,1)$ & same as $Q$ \\
       \bottomrule
-    \end{tabular}% <--- Note the % symbol here to handle spacing correctly
-  } % End of \resizebox
+    \end{tabular}% 
+  } 
 \end{table}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\linewidth]{images/p1_cost_preset_sweep.png}
+    \includegraphics[width=\linewidth]{figures/p1_cost_preset_sweep.png}
     \caption{Cost sweep}
-    \label{fig:placeholder}
+    \label{fig:placeholder_sweep}
 \end{figure}
-
 
 \subsection{Analysis}
 
-\noindent Controllability Analysis
+Controllability Analysis
 
-\begin{itemize}[leftmargin=10pt, itemsep=2pt, parsep=0pt]
-
-    \item Algebraic Controllability Matrix (Frozen-Time): \\
+\begin{itemize}
+    \item Algebraic Controllability Matrix (Frozen-Time):
     Used to check the structural control authority of the LTI system (or a "frozen" snapshot of an LTV system). For a system with $n = 7$ states:
-    $$C = \begin{bmatrix} B & AB & A^2B & A^3B & A^4B & A^5B & A^6B \end{bmatrix}$$
+    \[C = \begin{bmatrix} B & AB & A^2B & A^3B & A^4B & A^5B & A^6B \end{bmatrix}\]
     
-    \item Finite-Horizon Controllability Gramian: \\
-    $$W_c(0, t_f) = \int_{0}^{t_f} \Phi(0, \tau) B(\tau) B(\tau)^\top \Phi(0, \tau)^\top d\tau$$
+    \item Finite-Horizon Controllability Gramian:
+    \[W_c(0, t_f) = \int_{0}^{t_f} \Phi(0, \tau) B(\tau) B(\tau)^\top \Phi(0, \tau)^\top d\tau\]
     Where $\Phi(t, \tau)$ is the state transition matrix of $A(t)$.
-    
-    \item Numerical Computation (Differential Equation): \\
+
+    \item Numerical Computation (Differential Equation):
     To practically compute $W_c$ numerically and avoid explicitly calculating the integral and state transition matrix, we can solve its differential equation form:
-    $$\dot{W}_c(t) = A(t)W_c(t) + W_c(t)A(t)^\top + B(t)B(t)^\top$$
+    \[\dot{W}_c(t) = A(t)W_c(t) + W_c(t)A(t)^\top + B(t)B(t)^\top\]
     
-    \item Minimum Control Energy: \\
+    \item Minimum Control Energy:
     The minimum control energy $E$ required to reach a specific state deviation $x_f$ is given by:
-    $$E = x_f^\top W_c^{-1} x_f$$
-
+    \[E = x_f^\top W_c^{-1} x_f\]
 \end{itemize}
 
-\noindent Controllability matrices
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{figures/p1_gramian_remaining_horizon.png}
+    \caption{Controllability Gramian and horizontal contrallability proxy}
+\end{figure}
+
+Controllable energy in the weakest meaningful mode shrinks as 
+$t_f - t$ shrinks, especially for horizontal motion (as shown by the proxy).
+
 
 \begin{itemize}
-    \item State order: $x=[p_x,p_z,v_x,v_z,\theta,\omega,m]^\top$
-    \item controls $u=[\delta T,\tau]^\top$
-    \item $\mathcal{C}=[B,AB,\ldots,A^{6}B]\in\mathbb{R}^{7\times 14}$.
-\end{itemize}
+    \item Controllability matrices
+        \begin{itemize}
+            \item State order: $x=[p_x,p_z,v_x,v_z,\theta,\omega,m]^\top$
+            \item controls $u=[\delta T,\tau]^\top$
+            \item $\mathcal{C}=[B,AB,\ldots,A^{6}B]\in\mathbb{R}^{7\times 14}$.
+        \end{itemize}
+        
+        \begin{itemize}
+            \item Trim Snapshot $t=0.0\,\mathrm{s}$
+            
+            Descent trim: $m=20.00\,\mathrm{kg}$, $v_x^\ast=40.0\,\mathrm{m/s}$, $v_z^\ast=-8.0\,\mathrm{m/s}$.
+            
+            \begin{table}[H]
+                \centering
+                \caption{Controllability rank and singular values}
+                \small
+                \setlength{\tabcolsep}{4pt}
+                \begin{tabular}{@{}lcccc@{}}
+                \toprule
+                Model & $\mathrm{rank}(\mathcal{C})$ & $\sigma_1$ & $\sigma_6$ & $\sigma_7$ \\
+                \midrule
+                Hover LTI & 7/7 & 0.98 & 0.0489 & 0 \\
+                Descent LTV & 7/7 & 0.98 & 0.0489 & 0 \\
+                \bottomrule
+                \end{tabular}
+            \end{table}
+                
+            Hover LTI at $t=0.0\,\mathrm{s}$.
+                
+            \begin{small}
+                \setlength{\arraycolsep}{1.8pt} 
+                \renewcommand{\arraystretch}{0.95}
+                \noindent\resizebox{\linewidth}{!}{$\displaystyle 
+                \begin{array}{lc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}c}
+                 & \multicolumn{2}{c}{B} & \multicolumn{2}{c}{AB} & \multicolumn{2}{c}{A^2B} & \multicolumn{2}{c}{A^3B} & \multicolumn{2}{c}{A^4B} & \multicolumn{2}{c}{A^5B} & \multicolumn{2}{c}{A^6B} \\
+                \hline
+                p_x & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                p_z & 0 & 0 & 0.05 & 0 & 0.00245 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                v_x & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                v_z & 0.05 & 0 & 0.00245 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                \theta & 0 & 0 & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                \omega & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                m & -0.005 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0
+                \end{array}$}
+            \end{small}
+                
+            Descent LTV at $t=0.0\,\mathrm{s}$.
+                
+            \begin{small}
+                \setlength{\arraycolsep}{1.8pt}
+                \renewcommand{\arraystretch}{0.95}
+                \noindent\resizebox{\linewidth}{!}{$\displaystyle 
+                \begin{array}{lc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}c}
+                 & \multicolumn{2}{c}{B} & \multicolumn{2}{c}{AB} & \multicolumn{2}{c}{A^2B} & \multicolumn{2}{c}{A^3B} & \multicolumn{2}{c}{A^4B} & \multicolumn{2}{c}{A^5B} & \multicolumn{2}{c}{A^6B} \\
+                \hline
+                p_x & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                p_z & 0 & 0 & 0.05 & 0 & 0.00245 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                v_x & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                v_z & 0.05 & 0 & 0.00245 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                \theta & 0 & 0 & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                \omega & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                m & -0.005 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0
+                \end{array}$}
+            \end{small}
+        
+            \item Trim Snapshot $t=15.0\,\mathrm{s}$
+                
+            Descent trim: $m=9.59\,\mathrm{kg}$, $v_x^\ast=25.0\,\mathrm{m/s}$, $v_z^\ast=-8.0\,\mathrm{m/s}$.
+                
+            \begin{table}[H]
+                \centering
+                \caption{Controllability rank and singular values}
+                \small
+                \setlength{\tabcolsep}{4pt}
+                \begin{tabular}{@{}lcccc@{}}
+                \toprule
+                Model & $\mathrm{rank}(\mathcal{C})$ & $\sigma_1$ & $\sigma_6$ & $\sigma_7$ \\
+                \midrule
+                Hover LTI & 7/7 & 0.98 & 0.0489 & 0 \\
+                Descent LTV & 7/7 & 0.98 & 0.1 & 0 \\
+                \bottomrule
+                \end{tabular}
+            \end{table}
+                
+            Hover LTI at $t=15.0\,\mathrm{s}$.
+                
+            \begin{small}
+                \setlength{\arraycolsep}{1.8pt}
+                \renewcommand{\arraystretch}{0.95}
+                \noindent\resizebox{\linewidth}{!}{$\displaystyle 
+                \begin{array}{lc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}c}
+                 & \multicolumn{2}{c}{B} & \multicolumn{2}{c}{AB} & \multicolumn{2}{c}{A^2B} & \multicolumn{2}{c}{A^3B} & \multicolumn{2}{c}{A^4B} & \multicolumn{2}{c}{A^5B} & \multicolumn{2}{c}{A^6B} \\
+                \hline
+                p_x & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                p_z & 0 & 0 & 0.05 & 0 & 0.00245 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                v_x & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                v_z & 0.05 & 0 & 0.00245 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                \theta & 0 & 0 & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                \omega & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                m & -0.005 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0
+                \end{array}$}
+            \end{small}
+                
+            Descent LTV at $t=15.0\,\mathrm{s}$.
+                
+            \begin{small}
+                \setlength{\arraycolsep}{1.8pt}
+                \renewcommand{\arraystretch}{0.95}
+                \noindent\resizebox{\linewidth}{!}{$\displaystyle 
+                \begin{array}{lc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}c}
+                 & \multicolumn{2}{c}{B} & \multicolumn{2}{c}{AB} & \multicolumn{2}{c}{A^2B} & \multicolumn{2}{c}{A^3B} & \multicolumn{2}{c}{A^4B} & \multicolumn{2}{c}{A^5B} & \multicolumn{2}{c}{A^6B} \\
+                \hline
+                p_x & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                p_z & 0 & 0 & 0.104 & 0 & 0.00511 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                v_x & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                v_z & 0.104 & 0 & 0.00511 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                \theta & 0 & 0 & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                \omega & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                m & -0.005 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0
+                \end{array}$}
+            \end{small}
+        \end{itemize}
 
-\vspace{2pt}
+    \item Controllable and weakly controllable linearization comparisons.
 
-\begin{itemize}
-    \item Trim Snapshot $t=0.0\,\mathrm{s}$
-    
-        Descent trim: $m=20.00\,\mathrm{kg}$, $v_x^\ast=40.0\,\mathrm{m/s}$, $v_z^\ast=-8.0\,\mathrm{m/s}$.
+        \begin{figure}[H]
+            \centering
+            \includegraphics[width=\linewidth]{figures/p1_ic_sensitivity.png}
+            \caption{Sensitivity to initial condition error}
+            \label{fig:ic_sensitivity}
+        \end{figure}
+        
+        At small perturbations: descent can be worse (weak plant + wrong linearization point).
+        At large perturbations: hover overtakes — hover LTI may be overly optimistic at large $\alpha$ (linear model stays fixed while state explores larger deviations).
+        
+        \begin{figure}[H]
+            \centering
+            \includegraphics[width=\linewidth]{figures/p1_hover_vs_descent_2x2.png}
+            \caption{State and control effort across trajectory}
+        \end{figure}
+        
+        \begin{figure}[H]
+            \centering
+            \includegraphics[width=\linewidth]{figures/p1_weak_direction_transients.png}
+            \caption{Transient behavior}
+        \end{figure}
+
+        $p_x$ and $\theta$ swings indicate structural difficulty. Even “controllable” hover struggles. Gramian analysis flagged as expensive to correct. The gap is clearest in $p_z$ (mass/thrust schedule, changing trim). Descent worse
+
+        \subsection{Validation}
+
+        \begin{figure}[H]
+            \centering
+            \includegraphics[width=\linewidth]{figures/p1_weak_direction_transients.png}
+            \caption{Transient behavior}
+        \end{figure}
+        
+        Because this phase utilizes the Riccati sweep method rather than a shooting solver, optimality is validated by verifying the backward-pass terminal conditions and forward-pass tracking convergence. Table \ref{tab:val_p1} confirms the Riccati matrix $P(t)$ strictly satisfies the terminal boundary condition $P(t_f) = Q_f$. Additionally, the closed-loop tracking error $e(t)$ is bounded within acceptable numerical tolerances at the final time.
         
         \begin{table}[H]
         \centering
-        \caption{Controllability rank and singular values}
-        \small
-        \setlength{\tabcolsep}{4pt}
-        \begin{tabular}{@{}lcccc@{}}
+        \footnotesize
+        \caption{Riccati and Tracking Validation (Phase I/II)}
+        \label{tab:val_p1}
+        \begin{tabular}{@{}lllc@{}}
         \toprule
-        Model & $\mathrm{rank}(\mathcal{C})$ & $\sigma_1$ & $\sigma_6$ & $\sigma_7$ \\
-        \midrule
-        Hover LTI & 7/7 & 0.98 & 0.0489 & 0 \\
-        Descent LTV & 7/7 & 0.98 & 0.0489 & 0 \\
+        Metric & Target & Computed & Error (Residual) \\ \midrule
+        $||P(t_f) - Q_f||_\infty$ & $0$ & $1.22 \times 10^{-14}$ & $1.22 \times 10^{-14}$ \\
+        $||e(t_f)||_\infty$ & $0$ & $4.51 \times 10^{-6}$ & $4.51 \times 10^{-6}$ \\
         \bottomrule
         \end{tabular}
         \end{table}
         
-        Hover LTI at $t=0.0\,\mathrm{s}$.
-        
-        \begin{small}
-        \setlength{\arraycolsep}{1.8pt} % Drastically minimizes space between columns
-        \renewcommand{\arraystretch}{0.95}
-        \noindent\resizebox{\linewidth}{!}{$\displaystyle 
-        \begin{array}{lc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}c}
-         & \multicolumn{2}{c}{B} & \multicolumn{2}{c}{AB} & \multicolumn{2}{c}{A^2B} & \multicolumn{2}{c}{A^3B} & \multicolumn{2}{c}{A^4B} & \multicolumn{2}{c}{A^5B} & \multicolumn{2}{c}{A^6B} \\
-        \hline
-        p_x & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        p_z & 0 & 0 & 0.05 & 0 & 0.00245 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        v_x & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        v_z & 0.05 & 0 & 0.00245 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        \theta & 0 & 0 & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        \omega & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        m & -0.005 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0
-        \end{array}$}
-        \end{small}
-        
-        Descent LTV at $t=0.0\,\mathrm{s}$.
-        
-        \begin{small}
-        \setlength{\arraycolsep}{1.8pt}
-        \renewcommand{\arraystretch}{0.95}
-        \noindent\resizebox{\linewidth}{!}{$\displaystyle 
-        \begin{array}{lc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}c}
-         & \multicolumn{2}{c}{B} & \multicolumn{2}{c}{AB} & \multicolumn{2}{c}{A^2B} & \multicolumn{2}{c}{A^3B} & \multicolumn{2}{c}{A^4B} & \multicolumn{2}{c}{A^5B} & \multicolumn{2}{c}{A^6B} \\
-        \hline
-        p_x & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        p_z & 0 & 0 & 0.05 & 0 & 0.00245 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        v_x & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        v_z & 0.05 & 0 & 0.00245 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        \theta & 0 & 0 & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        \omega & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        m & -0.005 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0
-        \end{array}$}
-        \end{small}
-
-    \item Trim Snapshot $t=15.0\,\mathrm{s}$
-        
-        Descent trim: $m=9.59\,\mathrm{kg}$, $v_x^\ast=25.0\,\mathrm{m/s}$, $v_z^\ast=-8.0\,\mathrm{m/s}$.
-        
-        \begin{table}[H]
-        \centering
-        \caption{Controllability rank and singular values}
-        \small
-        \setlength{\tabcolsep}{4pt}
-        \begin{tabular}{@{}lcccc@{}}
-        \toprule
-        Model & $\mathrm{rank}(\mathcal{C})$ & $\sigma_1$ & $\sigma_6$ & $\sigma_7$ \\
-        \midrule
-        Hover LTI & 7/7 & 0.98 & 0.0489 & 0 \\
-        Descent LTV & 7/7 & 0.98 & 0.1 & 0 \\
-        \bottomrule
-        \end{tabular}
-        \end{table}
-        
-        Hover LTI at $t=15.0\,\mathrm{s}$.
-        
-        \begin{small}
-        \setlength{\arraycolsep}{1.8pt}
-        \renewcommand{\arraystretch}{0.95}
-        \noindent\resizebox{\linewidth}{!}{$\displaystyle 
-        \begin{array}{lc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}c}
-         & \multicolumn{2}{c}{B} & \multicolumn{2}{c}{AB} & \multicolumn{2}{c}{A^2B} & \multicolumn{2}{c}{A^3B} & \multicolumn{2}{c}{A^4B} & \multicolumn{2}{c}{A^5B} & \multicolumn{2}{c}{A^6B} \\
-        \hline
-        p_x & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        p_z & 0 & 0 & 0.05 & 0 & 0.00245 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        v_x & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        v_z & 0.05 & 0 & 0.00245 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        \theta & 0 & 0 & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        \omega & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        m & -0.005 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0
-        \end{array}$}
-        \end{small}
-        
-        Descent LTV at $t=15.0\,\mathrm{s}$.
-        
-        \begin{small}
-        \setlength{\arraycolsep}{1.8pt}
-        \renewcommand{\arraystretch}{0.95}
-        \noindent\resizebox{\linewidth}{!}{$\displaystyle 
-        \begin{array}{lc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}cc@{\hspace{2pt}}c}
-         & \multicolumn{2}{c}{B} & \multicolumn{2}{c}{AB} & \multicolumn{2}{c}{A^2B} & \multicolumn{2}{c}{A^3B} & \multicolumn{2}{c}{A^4B} & \multicolumn{2}{c}{A^5B} & \multicolumn{2}{c}{A^6B} \\
-        \hline
-        p_x & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        p_z & 0 & 0 & 0.104 & 0 & 0.00511 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        v_x & 0 & 0 & 0 & 0 & 0 & 0.98 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        v_z & 0.104 & 0 & 0.00511 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        \theta & 0 & 0 & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        \omega & 0 & 0.1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
-        m & -0.005 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0
-        \end{array}$}
-        \end{small}
 \end{itemize}
-
-
-
-
-
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.8\linewidth]{images/fig2_gramian.png}
-    \caption{Controllability Gramian}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.8\linewidth]{images/fig2_gramian.png}
-    \caption{Singular values/eigenvalue comparison}
-\end{figure}
-
-\noindent Controllable and weakly controllable linearization comparisons. 
-
-\begin{figure}
-    \centering
-    \includegraphics[width=\linewidth]{images/p1_ic_sensitivity.png}
-    \caption{Sensitivity to initial condition error}
-    \label{fig:placeholder}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.5\linewidth]{images/fig2_gramian.png}
-    \caption{Control energy consumed}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.5\linewidth]{images/fig2_gramian.png}
-    \caption{Transient behavior}
-\end{figure}
-
-
-
-
-\subsection{Validation}
-
-Because this phase utilizes the Riccati sweep method rather than a shooting solver, optimality is validated by verifying the backward-pass terminal conditions and forward-pass tracking convergence. 
-
-Table \ref{tab:val_p1} confirms the Riccati matrix $P(t)$ strictly satisfies the terminal boundary condition $P(t_f) = Q_f$. Additionally, the closed-loop tracking error $e(t)$ is bounded within acceptable numerical tolerances at the final time.
-
-\begin{table}[H]
-\centering
-\footnotesize
-\caption{Riccati and Tracking Validation (Phase I/II)}
-\label{tab:val_p1}
-\begin{tabular}{@{}lllc@{}}
-\toprule
-\textbf{Metric} & \textbf{Target} & \textbf{Computed} & \textbf{Error (Residual)} \\ \midrule
-$||P(t_f) - Q_f||_\infty$ & $0$ & $1.22 \times 10^{-14}$ & $1.22 \times 10^{-14}$ \\
-$||e(t_f)||_\infty$ & $0$ & $4.51 \times 10^{-6}$ & $4.51 \times 10^{-6}$ \\
-\bottomrule
-\end{tabular}
-\end{table}
+        
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \newpage
@@ -552,109 +535,135 @@ Objective:
     \end{split}
 \]
 
-
-
 \subsection{Analytical Derivations (PMP)}
 
 \begin{itemize}
-    \item The Hamiltonian:$$H = (x - x_{ref})^\top Q (x - x_{ref}) + u^\top R u + p^\top (Ax + Bu)$$
-    \item Adjoint Equation (Costate Dynamics):$$\dot{p} = -\frac{\partial H}{\partial x}$$ $$\dot{p} = -2Q(x - x_{ref}) - A^\top p $$
-    \item Stationarity (Optimal Control Law):$$\frac{\partial H}{\partial u} = 0 \implies 2Ru + B^\top p = 0$$$$u^* = -\frac{1}{2} R^{-1} B^\top p$$
-    \item Transversality (Terminal Condition):$$p(t_f) = \frac{\partial \phi}{\partial x} \bigg|_{t=t_f}$$$$p(t_f) = 2Q_f(x(t_f) - x_{ref}(t_f)) $$
+
+    \item The Hamiltonian:
+    \[H = (x - x_{\text{ref}})^\top Q (x - x_{\text{ref}}) + u^\top R u + p^\top (Ax + Bu)\]
+    
+    \item Adjoint Equation (Costate Dynamics):
+    \[\dot{p} = -\frac{\partial H}{\partial x}\] 
+    \[\dot{p} = -2Q(x - x_{\text{ref}}) - A^\top p \]
+    
+    \item Stationarity (Optimal Control Law):
+    \[\frac{\partial H}{\partial u} = 0 \implies 2Ru + B^\top p = 0 \implies u^* = -\frac{1}{2} R^{-1} B^\top p\]
+    
+    \item Transversality (Terminal Condition):
+    \[p(t_f) = \frac{\partial \phi}{\partial x} \bigg|_{t=t_f}\]
+    \[p(t_f) = 2Q_f(x(t_f) - x_{\text{ref}}(t_f)) \]
+    
     \item Tracking Riccati Equations (Riccati substitution)
     
-    The added auxiliary vector $s(t)$ accounts for the tracking offset
-    $$p(t) = P(t)x(t) + s(t)$$
-    $$\dot{p} = \dot{P}x + P\dot{x} + \dot{s}$$
-
-    substitute $\dot{p}$ and $\dot{x}$
-    $$-2Q(x - x_{ref}) - A^\top(Px + s) = \dot{P}x + P(Ax + Bu^*) + \dot{s}$$
-
-    substitute u ($u^* = -\frac{1}{2}R^{-1}B^\top(Px + s)$)
-
-     \begin{equation*}
-        \begin{aligned}
-        -2Qx &+ 2Qx_{\text{ref}} - A^\top P x - A^\top s ={} \\
-        &\dot{P}x + PAx - \tfrac{1}{2}P B R^{-1} B^\top (Px + s) + \dot{s}
-        \end{aligned}
-    \end{equation*}
+        The added auxiliary vector $s(t)$ accounts for the tracking offset:
+        \[p(t) = P(t)x(t) + s(t)\]
+        \[\dot{p} = \dot{P}x + P\dot{x} + \dot{s}\]
     
-    group the terms by $x(t)$
-    \begin{equation}
-        \begin{split}
-        &\Big[ \dot{P} + PA + A^\top P - \tfrac{1}{2}PBR^{-1}B^\top P + 2Q \Big] x(t) \\
-        &\quad + \Big[ \dot{s} + A^\top s - \tfrac{1}{2}PBR^{-1}B^\top s - 2Qx_{\text{ref}} \Big] = 0
-        \end{split}
-    \end{equation}
-
-    Since the expression must hold true for any arbitrary trajectory $x(t)$, we get the following tracking Riccati pair
-    \begin{itemize}
-        \item Matrix Riccati Differential Equation (The Feedback Rulebook) $$\dot{P} = -PA - A^\top P + \frac{1}{2}PBR^{-1}B^\top P - 2Q$$
-        \item  Auxiliary Vector Differential Equation (The Feedforward Tracker)$$\dot{s} = - \left( A^\top - \frac{1}{2}PBR^{-1}B^\top \right) s + 2Q x_{ref}$$
-    \end{itemize}
+        Substitute $\dot{p}$ and $\dot{x}$:
+        \[-2Q(x - x_{\text{ref}}) - A^\top(Px + s) = \dot{P}x + P(Ax + Bu^*) + \dot{s}\]
+    
+        Substitute $u$ ($u^* = -\frac{1}{2}R^{-1}B^\top(Px + s)$):
+        \[
+            \begin{aligned}
+            -2Qx &+ 2Qx_{\text{ref}} - A^\top P x - A^\top s ={} \\
+            &\dot{P}x + PAx - \tfrac{1}{2}P B R^{-1} B^\top (Px + s) + \dot{s}
+            \end{aligned}
+        \]
+        
+        Group the terms by $x(t)$:
+        \[
+            \begin{split}
+            &\Big[ \dot{P} + PA + A^\top P - \tfrac{1}{2}PBR^{-1}B^\top P + 2Q \Big] x(t) \\
+            &\quad + \Big[ \dot{s} + A^\top s - \tfrac{1}{2}PBR^{-1}B^\top s - 2Qx_{\text{ref}} \Big] = 0
+            \end{split}
+        \]
+    
+        Since the expression must hold true for any arbitrary trajectory $x(t)$, we get the following tracking Riccati pair:
+    
+        \begin{itemize}
+            \item  Matrix Riccati Differential Equation (The Feedback Rulebook):
+            \[\dot{P} = -PA - A^\top P + \frac{1}{2}PBR^{-1}B^\top P - 2Q\]
+            
+            \item Auxiliary Vector Differential Equation (The Feedforward Tracker):
+            \[\dot{s} = - \left( A^\top - \frac{1}{2}PBR^{-1}B^\top \right) s + 2Q x_{\text{ref}}\]
+        \end{itemize}
+        
     
     \item Closed-Loop Tracking Control Law
 
-    Once you integrate both $\dot{P}$ and $\dot{s}$ backward from $t_f$ to $0$, you can construct your final control law. Substitute $p(t) = P(t)x(t) + s(t)$ back into u: $$u^*(t) = -\frac{1}{2} R^{-1} B^\top P(t) x(t) - \frac{1}{2} R^{-1} B^\top s(t)$$This is elegantly split into two components:$$u^*(t) = -K(t)x(t) + u_{ff}(t)$$$K(t)x(t)$ is the feedback component that stabilizes the rocket and kills deviations. $u_{ff}(t)$ is the feedforward component that anticipates the c
+        Once you integrate both $\dot{P}$ and $\dot{s}$ backward from $t_f$ to $0$, you can construct your final control law. Substitute $p(t) = P(t)x(t) + s(t)$ back into $u$: 
+        \[u^*(t) = -\frac{1}{2} R^{-1} B^\top P(t) x(t) - \frac{1}{2} R^{-1} B^\top s(t)\]
+        This is elegantly split into two components:
+        \[u^*(t) = -K(t)x(t) + u_{ff}(t)\]
+        $K(t)x(t)$ is the feedback component that stabilizes the rocket and kills deviations. $u_{ff}(t)$ is the feedforward component that anticipates the control effort.
     
 \end{itemize}
 
 \subsection{Analysis}
 
+\begin{itemize}
+    \item \begin{figure}[H]
+            \centering
+            \includegraphics[width=\linewidth]{figures/p2_tracking_states_4x2.png}
+            \caption{Tracking Performance}
+            \label{fig:tracking_perf}
+        \end{figure}
+        
+        Tracker rejoins the reference qualitatively. Errors shrink and shapes align by mid-horizon.
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.3\textwidth]{figures/phaseX_hamiltonian.png}
-    \caption{Tracking Performance}
-    \label{fig:hamiltonian_phaseX}
-\end{figure}
+    \item Transient Response
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.3\textwidth]{figures/phaseX_hamiltonian.png}
-    \caption{Transient Response}
-    \label{fig:hamiltonian_phaseX}
-\end{figure}
+        \begin{figure}[H]
+            \centering
+            \includegraphics[width=\linewidth]{figures/p2_error_transients.png}
+            \caption{Transient Response}
+            \label{fig:transient_resp1}
+        \end{figure}
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.3\textwidth]{figures/phaseX_hamiltonian.png}
-    \caption{Control Effort}
-    \label{fig:hamiltonian_phaseX}
-\end{figure}
+        Scalar tracking error (cost-balanced error) decays monotonically in the weighted norm. Moving target, not zero, so no rebound mid-horizon. Position errors decay slowly and dominate; attitude error stays small throughout. Playing ‘catch-up’.
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.3\textwidth]{figures/phaseX_hamiltonian.png}
-    \caption{Robustness to deviations from the nominal trajectory.}
-    \label{fig:hamiltonian_phaseX}
-\end{figure}
+        \begin{figure}[H]
+            \centering
+            \includegraphics[width=\linewidth]{figures/p2_control_decomposition.png}
+            \caption{Transient Control Decomposition}
+            \label{fig:transient_resp2}
+        \end{figure}
 
-What if the reference trajectory is not known in advance?
-Your discussion must explain what challenges does your current approach face and why.
+    \item \begin{figure}[H]
+            \centering
+            \includegraphics[width=\linewidth]{figures/p2_control_effort.png}
+            \caption{Control Effort}
+            \label{fig:control_effort}
+        \end{figure}
 
+    \item \begin{figure}[H]
+            \centering
+            \includegraphics[width=\linewidth]{figures/p2_ic_robustness.png}
+            \caption{Robustness to deviations from the nominal trajectory.}
+            \label{fig:robustness}
+        \end{figure}
+
+\end{itemize}
+
+What if the reference trajectory is not known in advance? Your discussion must explain what challenges does your current approach face and why.
 
 \subsection{Validation}
 
-Optimality is validated by verifying the backward-pass terminal conditions and forward-pass tracking convergence. 
-
-Table \ref{tab:val_p1} confirms the Riccati matrix $P(t)$ strictly satisfies the terminal boundary condition $P(t_f) = Q_f$. Additionally, the closed-loop tracking error $e(t)$ is bounded within acceptable numerical tolerances at the final time.
+Optimality is validated by verifying the backward-pass terminal conditions and forward-pass tracking convergence. Table \ref{tab:val_p2} confirms the Riccati matrix $P(t)$ strictly satisfies the terminal boundary condition $P(t_f) = Q_f$. Additionally, the closed-loop tracking error $e(t)$ is bounded within acceptable numerical tolerances at the final time.
 
 \begin{table}[H]
 \centering
 \footnotesize
 \caption{Riccati and Tracking Validation (Phase I/II)}
-\label{tab:val_p1}
+\label{tab:val_p2}
 \begin{tabular}{@{}lllc@{}}
 \toprule
-\textbf{Metric} & \textbf{Target} & \textbf{Computed} & \textbf{Error (Residual)} \\ \midrule
+Metric & Target & Computed & Error (Residual) \\ \midrule
 $||P(t_f) - Q_f||_\infty$ & $0$ & $1.22 \times 10^{-14}$ & $1.22 \times 10^{-14}$ \\
 $||e(t_f)||_\infty$ & $0$ & $4.51 \times 10^{-6}$ & $4.51 \times 10^{-6}$ \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \newpage
@@ -663,95 +672,96 @@ $||e(t_f)||_\infty$ & $0$ & $4.51 \times 10^{-6}$ & $4.51 \times 10^{-6}$ \\
 \subsection{Phase A — Minimum-Time Ascent}
 
 \subsubsection*{Formulation}
-$$J_A = \int_{0}^{t_1} 1 \, dt = t_1$$
+\[J_A = \int_{0}^{t_1} 1 \, dt = t_1\]
 
 \subsubsection*{Analytical Derivations (PMP)}
 
-Hamiltonian
-$$H_A(x, u, p) = 1 + p^\top(Ax + Bu) = 1 + p^\top Ax + p^\top Bu$$
+Hamiltonian:
+\[H_A(x, u, p) = 1 + p^\top(Ax + Bu) = 1 + p^\top Ax + p^\top Bu\]
 
-Adjoint equation
-$$\dot{p} = -\frac{\partial H_A}{\partial x} = -A^\top p$$
+Adjoint equation:
+\[\dot{p} = -\frac{\partial H_A}{\partial x} = -A^\top p\]
 
-Switching Function
-$$\frac{\partial H_A}{\partial u} = B^\top p$$
+Switching Function:
+\[\frac{\partial H_A}{\partial u} = B^\top p \implies S(t) = B^\top p(t)\]
 
-$$S(t) = B^\top p(t)$$
+\[
+u_i^*(t) = \begin{cases} 
+U_{\max, i} & \text{if } S_i(t) < 0 \\
+U_{\min, i} & \text{if } S_i(t) > 0 
+\end{cases}
+\]
 
-$$u_i^*(t) = \begin{cases} 
-U_{max, i} & \text{if } S_i(t) < 0 \\
-U_{min, i} & \text{if } S_i(t) > 0 
-\end{cases}$$
-
-$$H_A(t) \equiv 0 \implies 1 + p(t)^\top \big(Ax(t) + Bu^*(t)\big) = 0 \quad \forall t \in [0, t_1]$$
+\[H_A(t) \equiv 0 \implies 1 + p(t)^\top \big(Ax(t) + Bu^*(t)\big) = 0 \quad \forall t \in [0, t_1]\]
 
 \subsubsection*{Implementation}
 
-
-
 \subsubsection*{Ascent Trajectory Results}
 
-Why thrust saturation appears
+Why thrust saturation appears.
 
-How mass depletion changes control authority during flight
+How mass depletion changes control authority during flight.
 
-How the switching structure evolves over time
+How the switching structure evolves over time.
 
 Whether the optimal strategy front-loads or back-loads energy consumption.
 
-
-Note that the behavior largely depends on the choice of xsky . Choose the terminal velocity to
-be zero versus it is positive/negative and compare.
+Note that the behavior largely depends on the choice of $x_{sky}$. Choose the terminal velocity to be zero versus it is positive/negative and compare.
 
 \subsubsection*{Validation}
 
-
-
 \subsection{Phase B — Return-and-Land Problem}
 
-Phase B begins precisely where Phase A ends, thus the initial condition for the landing phase is $x(0) = x_1$
+Phase B begins precisely where Phase A ends, thus the initial condition for the landing phase is $x(0) = x_1$.
 
 \subsubsection*{Formulation \& Core PMP} 
-$$J_B = \int_{0}^{t_f} \Big( x^\top Q x + u^\top R u \Big) dt$$
+\[J_B = \int_{0}^{t_f} \Big( x^\top Q x + u^\top R u \Big) dt\]
 
-Generic Hamiltonian, and the fundamental $H(t_f) = 0$ condition)
-$$H_B(x, u, p) = x^\top Q x + u^\top R u + p^\top (Ax + Bu)$$
+Generic Hamiltonian, and the fundamental $H(t_f) = 0$ condition:
+\[H_B(x, u, p) = x^\top Q x + u^\top R u + p^\top (Ax + Bu)\]
 
-The unconstrained control law and adjoint equations remain identical to Phase I:$$u^*(t) = -\frac{1}{2} R^{-1} B^\top p(t)$$$$\dot{p}(t) = -2Qx(t) - A^\top p(t)$$
+The unconstrained control law and adjoint equations remain identical to Phase I:
+\[u^*(t) = -\frac{1}{2} R^{-1} B^\top p(t)\]
+\[\dot{p}(t) = -2Qx(t) - A^\top p(t)\]
 
 Because $t_f$ is free, PMP imposes the free-time transversality condition. The Hamiltonian evaluated at the terminal time must equal zero: 
 
-\begin{equation*}
+\[
 \begin{aligned}
 H_B(t_f) = 0 \implies & x(t_f)^\top Q x(t_f) + u(t_f)^\top R u(t_f) \\
 & + p(t_f)^\top \big( Ax(t_f) + Bu(t_f) \big) = 0
 \end{aligned}
-\end{equation*}
+\]
 
 \subsubsection*{Transversality} 
 
-$$p(t_f) = \frac{\partial \phi}{\partial x}\bigg|_{t_f} + \sum_{j} \nu_j \nabla h_j(x(t_f))$$
+\[p(t_f) = \frac{\partial \phi}{\partial x}\bigg|_{t_f} + \sum_{j} \nu_j \nabla h_j(x(t_f))\]
 
 \begin{itemize}
-    \item Manifold 1 (Pinpoint Landing)
+    \item \textit{Manifold 1 (Pinpoint Landing)}
 
     \begin{itemize}
         \item Description
-        $$\begin{aligned}
+        \[
+        \begin{aligned}
         h_1(x) &= p_z = 0 \\
         h_2(x) &= v_z = 0 \\
         h_3(x) &= \theta = 0
-        \end{aligned}$$
+        \end{aligned}
+        \]
 
         \item Gradients
-        $$\begin{aligned}
+        \[
+        \begin{aligned}
         \nabla h_1 &= [0, 1, 0, 0, 0, 0, 0]^\top \\
         \nabla h_2 &= [0, 0, 0, 1, 0, 0, 0]^\top \\
         \nabla h_3 &= [0, 0, 0, 0, 1, 0, 0]^\top
-        \end{aligned}$$
+        \end{aligned}
+        \]
 
         \item Transversality
-        $$\begin{aligned}
+        \[
+        \begin{aligned}
         p_{p_x}(t_f) &= \frac{\partial \phi}{\partial p_x} && \text{(Free state)} \\
         p_{p_z}(t_f) &= \frac{\partial \phi}{\partial p_z} + \nu_1 && \text{(Constrained)} \\
         p_{v_x}(t_f) &= \frac{\partial \phi}{\partial v_x} && \text{(Free state)} \\
@@ -759,59 +769,67 @@ $$p(t_f) = \frac{\partial \phi}{\partial x}\bigg|_{t_f} + \sum_{j} \nu_j \nabla 
         p_{\theta}(t_f) &= \frac{\partial \phi}{\partial \theta} + \nu_3 && \text{(Constrained)} \\
         p_{\omega}(t_f) &= \frac{\partial \phi}{\partial \omega} && \text{(Free state)} \\
         p_{m}(t_f) &= \frac{\partial \phi}{\partial m} && \text{(Free state)}
-        \end{aligned}$$
+        \end{aligned}
+        \]
         \end{itemize}
  
-    \item Manifold 2 (Surface Landing)
+    \item \textit{Manifold 2 (Surface Landing)}
 
         \begin{itemize}
-            \item  Description: landing on the surface of a dome/sphere.
-            
-            $$\begin{aligned}
+            \item Description: landing on the surface of a dome/sphere.
+            \[
+            \begin{aligned}
             h_1(x) &= (p_x - p_c)^2 + p_z^2 - r^2 = 0 \\
             h_2(x) &= v_z = 0 \\
             h_3(x) &= \theta = 0
-            \end{aligned}$$
+            \end{aligned}
+            \]
 
-            \item  The Gradients \\
-            $h_1$ couples $p_x$ and $p_z$, spanning 2 dimensions:
-            $$\begin{aligned}
+            \item The Gradients: $h_1$ couples $p_x$ and $p_z$, spanning 2 dimensions.
+            \[
+            \begin{aligned}
             \nabla h_1 &= [2(p_x - p_c), 2p_z, 0, 0, 0, 0, 0]^\top \\
             \nabla h_2 &= [0, 0, 0, 1, 0, 0, 0]^\top \\
             \nabla h_3 &= [0, 0, 0, 0, 1, 0, 0]^\top
-            \end{aligned}$$
+            \end{aligned}
+            \]
 
             \item Transversality
-            $$\begin{aligned}
+            \[
+            \begin{aligned}
             p_{p_x}(t_f) &= \frac{\partial \phi}{\partial p_x} + 2\nu_1(p_x(t_f) - p_c) \\
             p_{p_z}(t_f) &= \frac{\partial \phi}{\partial p_z} + 2\nu_1 p_z(t_f)
-            \end{aligned}$$
+            \end{aligned}
+            \]
             \textit{(The remaining 5 costates are identical to M1)}
 
             \item Conclusion for M2: We can eliminate the unknown multiplier $\nu_1$ by dividing the first two equations (assuming $\frac{\partial \phi}{\partial x} = 0$). This yields the exact boundary condition passed to the TPBVP solver:
-            $$\frac{p_{p_x}(t_f)}{p_{p_z}(t_f)} = \frac{p_x(t_f) - p_c}{p_z(t_f)}$$
+            \[\frac{p_{p_x}(t_f)}{p_{p_z}(t_f)} = \frac{p_x(t_f) - p_c}{p_z(t_f)}\]
         \end{itemize}  
-    \end{itemize}
+\end{itemize}
  
 \subsubsection*{Landing Manifold Comparison}
 
-Landing time 
+\begin{itemize}
+    \item Landing time 
+    \item Energy consumption 
+    \item Switching structure
+    \item Terminal sensitivity
+    \item Feasibility
+\end{itemize}
 
-Energy consumption 
+How the geometry of the terminal manifold affects the resulting optimal trajectory and control structure.
 
-Switching structure
 
-Terminal sensitivity
-
-Feasibility. 
-
-Your discussion should explain how the geometry of
-the terminal manifold affects the resulting optimal trajectory and control structure.
 
 \subsubsection*{Validation}
 
-
-
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{figures/p3_hamiltonian.png}
+    \caption{Hamiltonian evolution}
+    \label{fig:p3_hamiltonian}
+\end{figure}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \newpage
@@ -819,37 +837,47 @@ the terminal manifold affects the resulting optimal trajectory and control struc
 
 \subsection{Phase Formulation}
 
-Consider the fixed-time, free-endpoint nonlinear optimal control problem
+Consider the fixed-time, free-endpoint nonlinear optimal control problem:
 
-$$\min_{u} \int_{0}^{t_f} \left( x^\top Q x + u^\top R u \right) dt$$
+\[\min_{u} \int_{0}^{t_f} \left( x^\top Q x + u^\top R u \right) dt\]
 
 Recall: 
-State Equations ( which is also $\dot{x} = \frac{\partial H}{\partial p}$)
+State Equations (which is also $\dot{x} = \frac{\partial H}{\partial p}$):
 
-$$\dot{x} = \begin{bmatrix} 
+\[
+\dot{x} = \begin{bmatrix} 
 v_x \\ 
 v_z \\ 
--\frac{T}{m}\sin\theta \\ 
+-\frac{T}{m}\sin\theta \\
 \frac{T}{m}\cos\theta - g \\ 
 \omega \\ 
 \frac{\tau}{I} \\ 
 -\alpha T 
-\end{bmatrix}$$
+\end{bmatrix}
+\]
 
-System is anchored by the known initial launch state at $t=0$: $$x(0) = x_{0}$$
+System is anchored by the known initial launch state at $t=0$: 
+\[x(0) = x_{0}\]
     
 \subsection{Analytical Derivations}
 
 \begin{itemize}
     \item Nonlinear Hamiltonian
+    
     Adjoin the nonlinear dynamics to the running cost using the costate vector $p = [p_1, p_2, p_3, p_4, p_5, p_6, p_7]^\top$:
-    $$H(x, u, p) = x^\top Q x + u^\top R u + p_1 v_x + p_2 v_z - p_3 \frac{T}{m}\sin\theta + p_4 \left(\frac{T}{m}\cos\theta - g\right) + p_5 \omega + p_6 \frac{\tau}{I} - p_7 \alpha T$$
+
+    \[
+    \begin{aligned}
+        H(x, u, p) ={}& x^\top Q x + u^\top R u + p_1 v_x + p_2 v_z - p_3 \tfrac{T}{m}\sin\theta \\
+        &+ p_4 \big( \tfrac{T}{m}\cos\theta - g \big) + p_5 \omega + p_6 \tfrac{\tau}{I} - p_7 \alpha T
+    \end{aligned}
+    \]
 
     \item Adjoint equations (costate equations)
-
-    $$\dot{p} = -\frac{\partial H}{\partial x}$$
+    \[\dot{p} = -\frac{\partial H}{\partial x}\]
     
-    $$\begin{aligned}
+    \[
+    \begin{aligned}
     \dot{p}_1 &= -2Q_{11} p_x \\
     \dot{p}_2 &= -2Q_{22} p_z \\
     \dot{p}_3 &= -2Q_{33} v_x - p_1 \\
@@ -857,21 +885,25 @@ System is anchored by the known initial launch state at $t=0$: $$x(0) = x_{0}$$
     \dot{p}_5 &= -2Q_{55} \theta + p_3 \frac{T}{m}\cos\theta + p_4 \frac{T}{m}\sin\theta \\
     \dot{p}_6 &= -2Q_{66} \omega - p_5 \\
     \dot{p}_7 &= -2Q_{77} m - p_3 \frac{T}{m^2}\sin\theta + p_4 \frac{T}{m^2}\cos\theta
-    \end{aligned}$$
+    \end{aligned}
+    \]
     
     \item Stationarity conditions ($\frac{\partial H}{\partial u} = 0$)
 
-    For Thrust ($T$):
-    $$\frac{\partial H}{\partial T} = 2R_{11}T - p_3 \frac{\sin\theta}{m} + p_4 \frac{\cos\theta}{m} - p_7 \alpha = 0$$$$T^* = \text{sat}_{T_{min}}^{T_{max}} \left[ \frac{1}{2 R_{11}} \left( p_3 \frac{\sin\theta}{m} - p_4 \frac{\cos\theta}{m} + p_7 \alpha \right) \right]$$
+    \begin{itemize}
+        \item For Thrust ($T$):
+        \[\frac{\partial H}{\partial T} = 2R_{11}T - p_3 \frac{\sin\theta}{m} + p_4 \frac{\cos\theta}{m} - p_7 \alpha = 0\]
+        \[T^* = \text{sat}_{T_{\min}}^{T_{\max}} \left[ \frac{1}{2 R_{11}} \left( p_3 \frac{\sin\theta}{m} - p_4 \frac{\cos\theta}{m} + p_7 \alpha \right) \right]\]
 
-    For Torque ($\tau$):
-    $$\frac{\partial H}{\partial \tau} = 2R_{22}\tau + \frac{p_6}{I} = 0$$$$\tau^* = \text{sat}_{\tau_{min}}^{\tau_{max}} \left[ -\frac{p_6}{2 I R_{22}} \right]$$
-    
+        \item For Torque ($\tau$):
+        \[\frac{\partial H}{\partial \tau} = 2R_{22}\tau + \frac{p_6}{I} = 0\]
+        \[\tau^* = \text{sat}_{\tau_{\min}}^{\tau_{\max}} \left[ -\frac{p_6}{2 I R_{22}} \right]\]
+    \end{itemize}
 
     \item Transversality (terminal condition)
     
     Because the terminal state is subject to optimization, the terminal costate at $t=t_f$ is governed by the transversality condition based on the terminal penalty $\phi(x(t_f))$ (or specific manifold constraints):
-    $$p(t_f) = \frac{\partial \phi}{\partial x} \bigg|_{t=t_f}$$
+    \[p(t_f) = \frac{\partial \phi}{\partial x} \bigg|_{t=t_f}\]
 
     \item Complete TPBVP
     
@@ -887,7 +919,7 @@ System is anchored by the known initial launch state at $t=0$: $$x(0) = x_{0}$$
         \dot{v}_z &= \frac{T}{m}\cos\theta - g \\
         \dot{\theta} &= \omega \\
         \dot{\omega} &= \frac{\tau}{I} \\
-        \dot{m} &= -\alpha T \\[1.5ex] % Adds a small gap between states and costates
+        \dot{m} &= -\alpha T \\[1.5ex] 
         % Backward Costate Dynamics
         \dot{p}_1 &= -2Q_{11} p_x \\
         \dot{p}_2 &= -2Q_{22} p_z \\
@@ -903,67 +935,72 @@ System is anchored by the known initial launch state at $t=0$: $$x(0) = x_{0}$$
 
 \subsection{Numerical Implementation}
 
-
 \subsection{Analysis}
 
-1. the linear optimal controller on the linearized dynamics
-
-2. the same controller on the nonlinear dynamics
-
-3. and the nonlinear optimal controller on the nonlinear dynamics.
+The following 3 simulation scenarios will be compared:
+\begin{itemize}
+    \item - linear optimal controller on the linearized dynamics
+    \item - the same controller on the nonlinear dynamics
+    \item - nonlinear optimal controller on the nonlinear dynamics.
+\end{itemize}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.5\linewidth]{images/fig_control_diagram.png}
-    \caption{trajectory comparisons (position, velocity, attitude, and mass trajectories)}
-    \label{fig:placeholder}
+    \includegraphics[width=\linewidth]{figures/p4_state_trajectories.png}
+    \caption{Trajectory comparisons (position, velocity, attitude, and mass trajectories)}
+    \label{fig:p4_traj_comp}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.5\linewidth]{images/fig_control_diagram.png}
-    \caption{control histories (thrust and torque histories)}
-    \label{fig:placeholder}
+    \includegraphics[width=0.5\linewidth]{figures/p4_mission_plane_quiver.png}
+    \caption{Trajectory comparisons (px vs pz)}
+    \label{fig:p4_traj_comp2}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.5\linewidth]{images/fig_control_diagram.png}
+    \includegraphics[width=\linewidth]{figures/p4_control_histories.png}
+    \caption{Control histories (thrust and torque histories)}
+    \label{fig:p4_control_hist}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{figures/fig_control_diagram.png}
     \caption{Solver sensitivity}
-    \label{fig:placeholder}
+    \label{fig:p4_solver_sens}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.5\linewidth]{images/fig_control_diagram.png}
+    \includegraphics[width=\linewidth]{figures/p4_terminal_behavior.png}
     \caption{Convergence behavior}
-    \label{fig:placeholder}
+    \label{fig:p4_conv_behav}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.5\linewidth]{images/fig_control_diagram.png}
+    \includegraphics[width=\linewidth]{figures/fig_control_diagram.png}
     \caption{Terminal residual analysis (terminal error comparisons)}
-    \label{fig:placeholder}
+    \label{fig:p4_term_resid}
 \end{figure}
-
 
 \subsection{Validation}
 
-To verify the numerical solution to the Two-Point Boundary Value Problem (TPBVP) and prove strict adherence to Pontryagin's Maximum Principle (PMP), the solution was validated against the necessary optimality conditions. \\
+To verify the numerical solution to the Two-Point Boundary Value Problem (TPBVP) and prove strict adherence to Pontryagin's Maximum Principle (PMP), the solution was validated against the necessary optimality conditions. 
 
-\subsubsection{Hamiltonian Consistency}
-For an autonomous system with a free final time (or fixed final time), the Hamiltonian must remain constant along the optimal trajectory. Furthermore, for a time-optimal or free-final-time maneuver, this constant must identically equal zero: $H(t) \equiv 0 \ \forall \ t \in [0, t_f]$. 
-As shown in Figure \ref{fig:hamiltonian_phaseX}, the computed Hamiltonian remains strictly constant, with a maximum deviation of $\mathcal{O}(10^{-8})$, confirming Hamiltonian consistency.
+\subsubsection*{Hamiltonian Consistency}
+For an autonomous system with a free final time (or fixed final time), the Hamiltonian must remain constant along the optimal trajectory. Furthermore, for a time-optimal or free-final-time maneuver, this constant must identically equal zero: $H(t) \equiv 0 \ \forall \ t \in [0, t_f]$. As shown in Figure \ref{fig:hamiltonian_phaseX2}, the computed Hamiltonian remains strictly constant, with a maximum deviation of $\mathcal{O}(10^{-8})$, confirming Hamiltonian consistency.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.3\textwidth]{figures/phaseX_hamiltonian.png}
+    \includegraphics[width=\linewidth]{figures/p4_hamiltonian.png}
     \caption{Hamiltonian evolution $H(t)$ over the mission horizon, numerically confirming the necessary constant/zero condition dictated by PMP.}
-    \label{fig:hamiltonian_phaseX}
+    \label{fig:hamiltonian_phaseX2}
 \end{figure}
 
-\subsubsection{Terminal Conditions, Adjoint Boundaries, and Shooting Residuals}
+\subsubsection*{Terminal Conditions, Adjoint Boundaries, and Shooting Residuals}
 The shooting algorithm's convergence was verified by analyzing the boundary condition residuals. Table \ref{tab:validation_phaseX} presents the required terminal state constraints alongside the corresponding transversality conditions for the costate vector $p(t_f)$. 
 
 The global $\mathcal{L}_\infty$ norm of the shooting residual vector was evaluated at $\mathbf{1.42 \times 10^{-7}}$, well within the acceptable numerical tolerance threshold, guaranteeing the optimality of the solution.
@@ -972,11 +1009,12 @@ The global $\mathcal{L}_\infty$ norm of the shooting residual vector was evaluat
 \centering
 \caption{Validation of Terminal States and Transversality Conditions}
 \label{tab:validation_phaseX}
-\begin{small} % Reduces font size slightly to fit narrow columns
-\setlength{\tabcolsep}{3.5pt} % Shrinks padding between columns
+\begin{small} 
+\setlength{\tabcolsep}{3.5pt} 
+\begin{threeparttable}
 \begin{tabular}{@{}llcc@{}}
 \toprule
-\textbf{Type} & \textbf{Requirement} & \textbf{Computed} & \textbf{Residual} \\ \midrule
+Type & Requirement & Computed & Residual \\ \midrule
 State & $p_z(t_f) = 0$ \tnote{a} & $1.2 \times 10^{-7}$ & $1.2 \times 10^{-7}$ \\
 State & $v_z(t_f) = 0$ \tnote{b} & $-5.0 \times 10^{-8}$ & $5.0 \times 10^{-8}$ \\
 State & $\theta(t_f) = 0$ \tnote{c} & $0.0$ & $0.0$ \\ \midrule
@@ -984,17 +1022,15 @@ Trans. & $p_{p_x}(t_f) = 0$ & $8.4 \times 10^{-7}$ & $8.4 \times 10^{-7}$ \\
 Trans. & $p_{v_x}(t_f) = 0$ & $-3.1 \times 10^{-7}$ & $3.1 \times 10^{-7}$ \\
 Trans. & $p_{\omega}(t_f) = 0$ & $0.0$ & $0.0$ \\ \bottomrule
 \end{tabular}
-
-\vspace{0.3em}
-\raggedright
-\scriptsize
-\item[] \tnote{a} Ground constraint; \tnote{b} Soft touch constraint; \tnote{c} Upright constraint.
+\begin{tablenotes}
+    \scriptsize
+    \item[a] Ground constraint; \item[b] Soft touch constraint; \item[c] Upright constraint.
+\end{tablenotes}
+\end{threeparttable}
 \end{small}
 \end{table}
-
  
 \addtolength{\textheight}{-5cm}  
-% This command serves to balance the column lengths on the last page of the document manually. It shortens the textheight of the last page by a suitable amount. This command does not take effect until the next page so it should come on the page before the last. Make sure that you do not shorten the textheight too much.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section*{ACKNOWLEDGMENT}
@@ -1003,12 +1039,18 @@ The author thanks Professor Shahriar Talebi for guidance and instruction through
 
 \begin{thebibliography}{99}
 
-\bibitem{majidiReview2023}
-S. Coyle, E. Rouse, and C. Majidi, “Actuation and design innovations in earthworm-inspired soft robots: A review,”
-\emph{Frontiers in Robotics and AI}, vol. 10, 2023.
-[Online]. Available: \url{https://pmc.ncbi.nlm.nih.gov/articles/PMC9989016/}
+\bibitem{liberzon2012}
+Liberzon, D. (2012). \emph{Calculus of variations and optimal control theory: A concise introduction}. Princeton University Press.
+
+\bibitem{bryson2018}
+Bryson, A. E., \& Ho, Y.-C. (2018). \emph{Applied optimal control}. Routledge. https://doi.org/10.1201/9781315137667
+
+\bibitem{kirk2004}
+Kirk, D. E. (2004). \emph{Optimal control theory: An introduction}. Courier Corporation.
+
+\bibitem{acikmese2007}
+Acikmese, B., \& Ploen, S. R. (2007). Convex programming approach to powered descent guidance for Mars landing. \emph{Journal of Guidance, Control, and Dynamics}, \emph{30}(5), 1353--1366. https://doi.org/10.2514/1.27553
 
 \end{thebibliography}
-
 
 \end{document}

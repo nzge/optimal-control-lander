@@ -697,6 +697,14 @@ def mission_altitude_history(sol: MissionSolution, params: dict, trim_func=None)
     return np.concatenate([alt_a, alt_b])
 
 
+def _h_drift_text(H: np.ndarray) -> str:
+    if H.size == 0:
+        return "no data"
+    drift = float(np.max(H) - np.min(H))
+    mean = float(np.mean(H))
+    return rf"$\bar H={mean:.3g}$, drift={drift:.2e}"
+
+
 def _plot_mission_phases(ax, sol, params, *, label_prefix=""):
     import matplotlib.pyplot as plt
 
@@ -782,17 +790,53 @@ def export_part3_figures(p3_m1, p3_m2, params, out_dir, save_figure):
         axes[1, col].legend(fontsize=7)
     save_figure(fig, f"{out_dir}/p3_switching_controls.png")
 
-    # Hamiltonian traces both manifolds
-    fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=False)
-    for sol, c, name in [(sol_m1, "C0", "M1"), (sol_m2, "C1", "M2")]:
-        axes[0].plot(sol.t_a, sol.H_a, color=c, label=f"{name} $H_A$")
-        axes[1].plot(sol.t_b, sol.H_b, color=c, label=f"{name} $H_B$")
-    axes[0].set(ylabel=r"$H_A$", title="Hamiltonian consistency")
-    axes[1].axhline(0, color="k", lw=0.6)
-    axes[1].set(xlabel="t [s]", ylabel=r"$H_B$")
-    axes[0].legend()
-    axes[1].legend()
-    save_figure(fig, f"{out_dir}/p3_hamiltonian.png")
+    # Hamiltonian traces: Phase A (min-time) vs Phase B (regulation), per manifold
+    fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=False)
+    phase_specs = [
+        (
+            0,
+            r"$H_A = 1 + p^\top(Ax+Bu)$",
+            "Phase A — minimum-time ascent ($H_A \\equiv 0$ along bang-bang arc)",
+            lambda sol: (sol.t_a, sol.H_a),
+        ),
+        (
+            1,
+            r"$H_B = \xi^\top Q\xi + u^\top R u + p^\top(A\xi+Bu)$, $\xi=x-x_{\mathrm{ref}}$",
+            "Phase B — regulation to landing manifold ($H_B$ constant; free-time $H(t_f)=0$)",
+            lambda sol: (sol.t_b, sol.H_b),
+        ),
+    ]
+    for row, formula, subtitle, data_fn in phase_specs:
+        ax = axes[row]
+        for sol, c, name in [(sol_m1, "C0", "M1 flat"), (sol_m2, "C1", "M2 platform")]:
+            t_h, H_h = data_fn(sol)
+            ax.plot(t_h, H_h, color=c, lw=1.8, label=f"{name}")
+            if row == 1 and t_h.size and H_h.size:
+                ax.scatter([t_h[-1]], [H_h[-1]], color=c, s=36, zorder=5, marker="o")
+        ax.axhline(0.0, color="k", lw=0.7, ls="--", alpha=0.65)
+        ax.set(ylabel=r"$H$", title=f"{subtitle}\n{formula}")
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=7, loc="best")
+        drift_lines = []
+        for sol, name in [(sol_m1, "M1"), (sol_m2, "M2")]:
+            t_h, H_h = data_fn(sol)
+            if H_h.size:
+                drift_lines.append(f"{name}: {_h_drift_text(H_h)}")
+        if row == 1 and sol_m1.H_b.size:
+            drift_lines.append(rf"M1 $H(t_f)={sol_m1.H_tf:.2e}$")
+            drift_lines.append(rf"M2 $H(t_f)={sol_m2.H_tf:.2e}$")
+        ax.text(
+            0.02,
+            0.02,
+            "\n".join(drift_lines),
+            transform=ax.transAxes,
+            fontsize=7,
+            va="bottom",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.85),
+        )
+    axes[1].set(xlabel="t [s]")
+    fig.suptitle("Part III — Hamiltonian consistency by mission phase", y=1.01, fontsize=11)
+    save_figure(fig, f"{out_dir}/p3_hamiltonian.png", has_suptitle=True)
 
     return {"M1": m1, "M2": m2, "sens_M1": sens_m1, "sens_M2": sens_m2}
 

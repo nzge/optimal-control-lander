@@ -528,14 +528,66 @@ def export_part4_figures(result, out_dir, save_figure):
     fig.suptitle("Control histories")
     save_figure(fig, f"{out_dir}/p4_control_histories.png", has_suptitle=True)
 
-    fig, ax = plt.subplots(figsize=(9, 4))
-    ax.plot(tl, sl["H"], color=SCENARIO_COLORS["linear"], label=SCENARIO_LABELS["linear"])
-    ax.plot(tn, sn["H"], color=SCENARIO_COLORS["lqr_nl"], label=SCENARIO_LABELS["lqr_nl"])
-    ax.plot(tp, sp.H, color=SCENARIO_COLORS["pmp_nl"], ls="--", label=SCENARIO_LABELS["pmp_nl"])
-    ax.set(xlabel="t [s]", ylabel="H(t)", title="Hamiltonian consistency")
-    ax.legend(fontsize=7)
-    ax.grid(True, alpha=0.3)
-    save_figure(fig, f"{out_dir}/p4_hamiltonian.png")
+    fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+
+    tl_h, H_lin = tl, sl["H"]
+    axes[0].plot(tl_h, H_lin, color=SCENARIO_COLORS["linear"], lw=1.8, label=SCENARIO_LABELS["linear"])
+    if H_lin.size:
+        axes[0].axhline(float(np.mean(H_lin)), color="gray", ls=":", lw=0.8, alpha=0.7)
+        drift = float(np.max(H_lin) - np.min(H_lin))
+        axes[0].text(
+            0.02,
+            0.02,
+            rf"drift={drift:.2e}",
+            transform=axes[0].transAxes,
+            fontsize=7,
+            va="bottom",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.85),
+        )
+    axes[0].set(
+        ylabel=r"$H(t)$",
+        title=r"(1) LQR / linear plant — $H = x^\top Q x + u^\top R u + p^\top(Ax+Bu)$, $p=2P(t)x$",
+    )
+    axes[0].legend(fontsize=7)
+    axes[0].grid(True, alpha=0.3)
+
+    for key, t_h, H_h, ls in [
+        ("lqr_nl", tn, sn["H"], "-"),
+        ("pmp_nl", tp, sp.H, "--"),
+    ]:
+        axes[1].plot(
+            t_h,
+            H_h,
+            color=SCENARIO_COLORS[key],
+            lw=1.8,
+            ls=ls,
+            label=SCENARIO_LABELS[key],
+        )
+        if H_h.size:
+            axes[1].axhline(float(np.mean(H_h)), color=SCENARIO_COLORS[key], ls=":", lw=0.6, alpha=0.45)
+            drift = float(np.max(H_h) - np.min(H_h))
+            note = rf"{SCENARIO_LABELS[key]}: drift={drift:.2e}"
+            if key == "pmp_nl":
+                note += rf", $H(t_f)={H_h[-1]:.2e}$"
+            axes[1].text(
+                0.02 if key == "lqr_nl" else 0.02,
+                0.14 if key == "pmp_nl" else 0.02,
+                note,
+                transform=axes[1].transAxes,
+                fontsize=7,
+                va="bottom",
+                color=SCENARIO_COLORS[key],
+                bbox=dict(boxstyle="round,pad=0.25", facecolor="white", alpha=0.85),
+            )
+    axes[1].set(
+        xlabel="t [s]",
+        ylabel=r"$H(t)$",
+        title=r"(2–3) Nonlinear plant — $H = x^\top Q x + u^\top R u + p^\top f_{\mathrm{nl}}(x,u)$",
+    )
+    axes[1].legend(fontsize=7)
+    axes[1].grid(True, alpha=0.3)
+    fig.suptitle("Part IV — Hamiltonian evolution by comparison scenario", y=1.01, fontsize=11)
+    save_figure(fig, f"{out_dir}/p4_hamiltonian.png", has_suptitle=True)
 
     term_labels = SCENARIO_LABELS["linear"], SCENARIO_LABELS["lqr_nl"], SCENARIO_LABELS["pmp_nl"]
     xf = [xl[-1], xn[-1], xp[-1]]

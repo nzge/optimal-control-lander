@@ -883,6 +883,108 @@ def print_mission_report(sol: mis.MissionSolution, params: dict):
         print(f"  manifold check    : FAIL (components {man_vals})")
 
 
+def _pick_results(results, prefix: str):
+    return [r for r in results if r.name.startswith(prefix)]
+
+
+def _h_drift_text(H: np.ndarray) -> str:
+    if H.size == 0:
+        return "no data"
+    drift = float(np.max(H) - np.min(H))
+    mean = float(np.mean(H))
+    return rf"$\bar H={mean:.3g}$, drift={drift:.2e}"
+
+
+def _style_h_panel(ax, *, ref_zero: bool = False, ref_terminal_zero: bool = False):
+    ax.grid(True, alpha=0.3)
+    if ref_zero:
+        ax.axhline(0.0, color="k", lw=0.7, ls="--", alpha=0.65, label=r"$H\equiv 0$ (time-optimal)")
+    if ref_terminal_zero:
+        ax.axhline(0.0, color="k", lw=0.7, ls="--", alpha=0.65, label=r"$H(t_f)=0$ (free final time)")
+
+
+def export_part1_hamiltonian_figure(out_dir, results, save_figure):
+    """Part I: fixed-time LQR Hamiltonian on hover vs descent trims."""
+    import matplotlib.pyplot as plt
+
+    part1 = _pick_results(results, "P1 ")
+    fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=False)
+
+    ax = axes[0]
+    for r in part1:
+        if r.t.size and r.H.size:
+            ax.plot(r.t, r.H, lw=1.8, label=r.name.replace("P1 ", ""))
+            ax.axhline(float(np.mean(r.H)), ls=":", lw=0.8, alpha=0.5)
+    ax.set(
+        ylabel=r"$H(t)$",
+        title=r"Part I — regulation Hamiltonian $H = x^\top Q x + u^\top R u + p^\top(Ax+Bu)$",
+    )
+    _style_h_panel(ax)
+    ax.legend(fontsize=7, loc="best")
+    ax.text(
+        0.02,
+        0.02,
+        "Fixed $t_f$: autonomous $H(t)$ should remain constant\n"
+        + "\n".join(_h_drift_text(r.H) for r in part1 if r.H.size),
+        transform=ax.transAxes,
+        fontsize=7,
+        va="bottom",
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.85),
+    )
+
+    ax = axes[1]
+    colors = plt.cm.tab10(np.linspace(0, 1, max(len(part1), 1)))
+    for r, c in zip(part1, colors):
+        if not (r.t.size and r.H.size):
+            continue
+        ax.plot(r.t, r.H - np.mean(r.H), color=c, lw=1.5, label=r.name.replace("P1 ", ""))
+    ax.set(xlabel="t [s]", ylabel=r"$H(t)-\bar H$", title="Deviation from mean (consistency check)")
+    _style_h_panel(ax, ref_zero=True)
+    ax.legend(fontsize=7)
+    save_figure(fig, f"{out_dir}/p1_hamiltonian.png", has_suptitle=False)
+
+
+def export_part2_hamiltonian_figure(out_dir, results, save_figure):
+    """Part II: reference regulation vs tracking Hamiltonians."""
+    import matplotlib.pyplot as plt
+
+    ref = next((r for r in results if r.name.startswith("P2 reference")), None)
+    trk = next((r for r in results if r.name.startswith("P2 tracking")), None)
+
+    fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=False)
+
+    panels = [
+        (
+            ref,
+            r"Reference plan (regulation) — $H = x^\top Q x + u^\top R u + p^\top(Ax+Bu)$",
+            "P2 reference trajectory treated as open-loop regulation plan",
+        ),
+        (
+            trk,
+            r"Tracking closed loop — $H = (x-x_{\mathrm{ref}})^\top Q(x-x_{\mathrm{ref}}) + u^\top R u + p^\top(Ax+Bu)$",
+            r"Costates $\lambda = P(t)(x-x_{\mathrm{ref}})+s(t)$ from tracking Riccati pair",
+        ),
+    ]
+    for ax, (r, title, note) in zip(axes, panels):
+        if r is not None and r.t.size and r.H.size:
+            ax.plot(r.t, r.H, "C0", lw=1.8, label=r.name.replace("P2 ", ""))
+            ax.axhline(float(np.mean(r.H)), color="C1", ls=":", lw=0.9, label=r"$\bar H$")
+        ax.set(ylabel=r"$H(t)$", title=title)
+        _style_h_panel(ax)
+        ax.legend(fontsize=7)
+        ax.text(
+            0.02,
+            0.02,
+            note + ("\n" + _h_drift_text(r.H) if r is not None and r.H.size else ""),
+            transform=ax.transAxes,
+            fontsize=7,
+            va="bottom",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.85),
+        )
+    axes[1].set(xlabel="t [s]")
+    save_figure(fig, f"{out_dir}/p2_hamiltonian.png", has_suptitle=False)
+
+
 def print_report(results):
     keys = [
         ("terminal", "terminal (P/Qf BC)"),
@@ -912,25 +1014,25 @@ def export_validation_figures(out_dir, results, save_figure):
     """Write validation diagnostic figures (called from export_presentation_figures)."""
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(10, 4.5))
-    for r in results:
-        if r.t.size and r.H.size:
-            ax.plot(r.t, r.H, lw=1.5, label=r.name)
-    ax.set(xlabel="t [s]", ylabel="H(t)", title="Hamiltonian along optimal trajectories")
-    ax.legend(fontsize=7)
-    ax.grid(True, alpha=0.3)
-    save_figure(fig, f"{out_dir}/val_hamiltonian_traces.png")
+    export_part1_hamiltonian_figure(out_dir, results, save_figure)
+    export_part2_hamiltonian_figure(out_dir, results, save_figure)
 
     fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
     for r in results:
         if not r.t.size:
             continue
-        axes[0].semilogy(r.t, np.maximum(r.state_ode, 1e-16), lw=1.2, label=r.name)
+        if r.state_ode.ndim == 1 and r.state_ode.size == r.t.size:
+            axes[0].semilogy(r.t, np.maximum(r.state_ode, 1e-16), lw=1.2, label=r.name)
+        else:
+            axes[0].axhline(max(r.state_ode_max, 1e-16), lw=1.2, label=r.name)
         if r.adjoint_ode.ndim == 1 and r.adjoint_ode.size == r.t.size:
-            axes[1].semilogy(r.t, np.maximum(r.adjoint_ode, 1e-16), lw=1.2)
+            axes[1].semilogy(r.t, np.maximum(r.adjoint_ode, 1e-16), lw=1.2, label=r.name)
         else:
             axes[1].axhline(max(r.adjoint_ode_max, 1e-16), lw=1.2, label=r.name)
-        axes[2].semilogy(r.t, np.maximum(r.stationarity, 1e-16), lw=1.2)
+        if r.stationarity.ndim == 1 and r.stationarity.size == r.t.size:
+            axes[2].semilogy(r.t, np.maximum(r.stationarity, 1e-16), lw=1.2, label=r.name)
+        else:
+            axes[2].axhline(max(r.stationarity_max, 1e-16), lw=1.2, label=r.name)
     axes[0].set(ylabel=r"$\|\dot x - f(x,u)\|$", title="State rollout residual")
     axes[1].set(ylabel="Riccati / feedfwd ODE", title="Adjoint (TPBVP) ODE residual")
     axes[2].set(ylabel=r"$\|Ru + B^\top\lambda\|$", title="Stationarity", xlabel="t [s]")
