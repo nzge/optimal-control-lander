@@ -112,8 +112,9 @@ def _riccati_ode_residual(P_hist, t_P, dynamics_func, Q, R, params):
         dP = (P_hist[k + 1] - P_hist[k]) / dt
         A, B = dynamics_func(t_P[k], params)
         P = P_hist[k]
+        # Backward-time Riccati: dP/dt = -(A'P + PA - PBR^{-1}B'P + Q).
         rhs = A.T @ P + P @ A - P @ B @ Rinv @ B.T @ P + Q
-        res.append(np.linalg.norm(dP - rhs))
+        res.append(np.linalg.norm(dP + rhs))
     return np.array(res) if res else np.array([0.0])
 
 
@@ -131,18 +132,19 @@ def _feedforward_ode_residual(s_hist, t_s, P_interp, xref_on_grid, t_grid, dynam
         P = P_interp(t)
         idx = min(np.searchsorted(t_grid, t, side="right") - 1, len(t_grid) - 1)
         idx = max(idx, 0)
+        # Backward-time feedforward: ds/dt = -[(A - BR^{-1}B'P)'s + Q x_ref].
         rhs = (A - B @ Rinv @ B.T @ P).T @ s_hist[k] + Q @ xref_on_grid[idx]
-        res.append(np.linalg.norm(ds - rhs))
+        res.append(np.linalg.norm(ds + rhs))
     return np.array(res) if res else np.array([0.0])
 
 
 def _riccati_terminal(P_hist, Qf):
-    """P(tf) = Qf at the Riccati final-time boundary (P_hist[0] at t=tf)."""
-    return float(np.linalg.norm(P_hist[0] - Qf))
+    """P(tf) = Qf at the Riccati final-time boundary (P_hist[-1] at t=tf)."""
+    return float(np.linalg.norm(P_hist[-1] - Qf))
 
 
 def _tracking_terminal(P_hist, s_hist):
-    return float(max(np.linalg.norm(P_hist[0]), np.linalg.norm(s_hist[0]) if s_hist is not None else 0.0))
+    return float(max(np.linalg.norm(P_hist[-1]), np.linalg.norm(s_hist[-1]) if s_hist is not None else 0.0))
 
 
 def _hamiltonian_regulation(x, u, lam, A, B, Q, R):
@@ -837,7 +839,8 @@ def run_all_validations(params=None, t_grid=None):
         )
 
     try:
-        p4 = exp.run_part4_nonlinear(params, t_grid, verbose=False)
+        # Part IV uses its own short near-hover horizon (not the long descent grid).
+        p4 = exp.run_part4_nonlinear(params, verbose=False)
         results.extend(validate_part4(p4, params))
     except Exception as exc:
         results.append(
@@ -867,6 +870,9 @@ def print_mission_report(sol: mis.MissionSolution, params: dict):
     print("\n=== Part III mission validation ===")
     print(f"  manifold          : {sol.manifold}")
     print(f"  phase times       : t1={sol.t1:.4f}s, tf={sol.tf:.4f}s")
+    print(f"  landing point     : ({sol.x_b[-1, 0]:.4f}, {sol.x_b[-1, 1]:.4f}) m")
+    print(f"  Phase A |res|_inf : {sol.phase_a_norm:.4e}  (min-time TPBVP)")
+    print(f"  Phase B bc|res|inf: {sol.phase_b_norm:.4e}  (collocation BVP)")
     print(f"  shooting |res|_inf: {sol.shoot_norm:.4e}")
     print(f"  manifold |res|_inf: {man_inf:.4e}")
     print(f"  H(tf)             : {sol.H_tf:.4e}")
@@ -1011,11 +1017,8 @@ def print_report(results):
 
 
 def export_validation_figures(out_dir, results, save_figure):
-    """Write validation diagnostic figures (called from export_presentation_figures)."""
+    """Cross-cutting Section 9 residual figures (per-part Hamiltonians live with their parts)."""
     import matplotlib.pyplot as plt
-
-    export_part1_hamiltonian_figure(out_dir, results, save_figure)
-    export_part2_hamiltonian_figure(out_dir, results, save_figure)
 
     fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
     for r in results:

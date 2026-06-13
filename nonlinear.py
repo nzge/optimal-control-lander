@@ -10,7 +10,7 @@ Three comparison scenarios (project requirement):
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from scipy.integrate import solve_bvp
@@ -79,17 +79,22 @@ def nonlinear_costate_dynamics(t, x, p, u, Q, params, *, trim_func=TRIM_FUNC):
 
 
 def optimal_control(t, x, p, R, params, *, trim_func=TRIM_FUNC):
-    """PMP stationarity with actuator saturation (deviation control u=[delta_T, tau])."""
+    """PMP stationarity with actuator saturation (deviation control u=[delta_T, tau]).
+
+    The running cost penalizes the *deviation* control u=[delta_T, tau], so
+    dH/d(delta_T)=0 yields delta_T* directly (the thrust appearing in the EOM is
+    T = T_trim + delta_T). No trim subtraction is applied: the bracket below is
+    already the optimal thrust deviation.
+    """
     m, theta = _trim_mass_theta(t, x, params, trim_func)
-    trim = trim_func(t, params)
     alpha = params["α"]
     I = params["I"]
 
-    T_req = (1.0 / (2.0 * R[0, 0])) * (
+    dT_req = (1.0 / (2.0 * R[0, 0])) * (
         p[2] * np.sin(theta) / m - p[3] * np.cos(theta) / m + p[6] * alpha
     )
     tau_req = -p[5] / (2.0 * I * R[1, 1])
-    u_req = np.array([T_req - trim["T"], tau_req])
+    u_req = np.array([dT_req, tau_req])
     lo, hi = cst.control_bounds(t, params, trim_func)
     return np.clip(u_req, lo, hi)
 
@@ -169,6 +174,9 @@ class NonlinearSolution:
     bc_residual: float
     J_u: float
     n_nodes: int
+    bc_residual_vec: np.ndarray = field(default_factory=lambda: np.array([]))
+    rms_residuals: np.ndarray = field(default_factory=lambda: np.array([]))
+    t_mid: np.ndarray = field(default_factory=lambda: np.array([]))
 
 
 def simulate_lqr_on_nonlinear(
@@ -313,7 +321,11 @@ def solve_nonlinear_tpbvp(
     p = sol.y[N_STATE:].T
     u = np.array([optimal_control(t[k], x[k], p[k], R, params, trim_func=trim_func) for k in range(len(t))])
     H = np.array([hamiltonian(t[k], x[k], p[k], u[k], Q, R, params, trim_func=trim_func) for k in range(len(t))])
-    bc_res = float(np.max(np.abs(bc(sol.y[:, 0], sol.y[:, -1]))))
+    bc_res_vec = bc(sol.y[:, 0], sol.y[:, -1])
+    bc_res = float(np.max(np.abs(bc_res_vec)))
+
+    rms = np.asarray(getattr(sol, "rms_residuals", np.array([])), dtype=float)
+    t_mid = 0.5 * (t[:-1] + t[1:]) if rms.size == len(t) - 1 else np.array([])
 
     return NonlinearSolution(
         success=bool(sol.success),
@@ -326,6 +338,9 @@ def solve_nonlinear_tpbvp(
         bc_residual=bc_res,
         J_u=control_effort(u, R, t),
         n_nodes=int(len(sol.x)),
+        bc_residual_vec=np.asarray(bc_res_vec, dtype=float),
+        rms_residuals=rms,
+        t_mid=t_mid,
     )
 
 
@@ -408,6 +423,53 @@ def run_part4(
         "dynamics_func": dynamics_func,
         "trim_func": trim_func,
     }
+
+
+def tpbvp_tol_sweep(
+    params,
+    t_grid,
+    Q,
+    R,
+    Qf,
+    x0,
+    tols,
+    *,
+    dynamics_func=None,
+    trim_func=TRIM_FUNC,
+):
+    """Re-solve the nonlinear TPBVP at several requested tolerances.
+
+    Quantifies convergence behavior and solver sensitivity: achieved boundary
+    residual, mesh size, interior collocation residual, and Hamiltonian drift
+    as the requested collocation tolerance is tightened from coarse to fine.
+    All solves share the same LQR warm start.
+    """
+    dynamics_func = dynamics_func or dyn.get_hover_dynamics
+    linear = ana.run_regulation(
+        dynamics_func, t_grid, Q, R, Qf, x0, params, lti=True, enforce_state=False
+    )
+    t_lin = linear["t_eff"]
+    p_guess = _costate_guess(t_lin, linear["x_hist"], linear["P_interp"])
+
+    rows = []
+    for tol in tols:
+        sol = solve_nonlinear_tpbvp(
+            x0, t_lin, linear["x_hist"], p_guess, Q, R, Qf, params,
+            trim_func=trim_func, tol=tol,
+        )
+        H_drift = float(np.max(sol.H) - np.min(sol.H)) if sol.H.size else float("nan")
+        rows.append(
+            {
+                "tol": float(tol),
+                "success": bool(sol.success),
+                "bc_residual": float(sol.bc_residual),
+                "n_nodes": int(sol.n_nodes),
+                "max_rms_residual": float(np.max(sol.rms_residuals)) if sol.rms_residuals.size else float("nan"),
+                "H_drift": H_drift,
+                "J_u": float(sol.J_u),
+            }
+        )
+    return rows
 
 
 def angle_sensitivity(
@@ -586,8 +648,7 @@ def export_part4_figures(result, out_dir, save_figure):
     )
     axes[1].legend(fontsize=7)
     axes[1].grid(True, alpha=0.3)
-    fig.suptitle("Part IV — Hamiltonian evolution by comparison scenario", y=1.01, fontsize=11)
-    save_figure(fig, f"{out_dir}/p4_hamiltonian.png", has_suptitle=True)
+    save_figure(fig, f"{out_dir}/p4_hamiltonian.png")
 
     term_labels = SCENARIO_LABELS["linear"], SCENARIO_LABELS["lqr_nl"], SCENARIO_LABELS["pmp_nl"]
     xf = [xl[-1], xn[-1], xp[-1]]
@@ -618,6 +679,69 @@ def export_part4_figures(result, out_dir, save_figure):
     for ax in axes:
         ax.grid(True, axis="y", alpha=0.3)
     save_figure(fig, f"{out_dir}/p4_energy_comparison.png")
+
+    # --- Convergence behavior + solver sensitivity (Sec. 8.3) ---
+    Q, R, Qf, x0_r = result["Q"], result["R"], result["Qf"], x0
+    tols = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
+    sweep = tpbvp_tol_sweep(result["params"], tl, Q, R, Qf, x0_r, tols)
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.3))
+    if sp.rms_residuals.size and sp.t_mid.size:
+        axes[0].semilogy(sp.t_mid, np.maximum(sp.rms_residuals, 1e-18), color=SCENARIO_COLORS["pmp_nl"], lw=1.5)
+    axes[0].set(
+        xlabel="t [s]",
+        ylabel="collocation RMS residual",
+        title=f"Interior defect of converged TPBVP (mesh = {sp.n_nodes} nodes)",
+    )
+    axes[0].grid(True, which="both", alpha=0.3)
+
+    sw_tol = [r["tol"] for r in sweep]
+    ax_bc = axes[1]
+    ax_bc.loglog(sw_tol, [max(r["bc_residual"], 1e-18) for r in sweep], "o-", color="C3", label="achieved BC residual")
+    ax_bc.loglog(sw_tol, sw_tol, "k:", lw=0.8, label="requested tol")
+    ax_bc.set(xlabel="requested collocation tol", ylabel=r"BC residual $\|\,\cdot\,\|_\infty$")
+    ax_bc.grid(True, which="both", alpha=0.3)
+    ax_nodes = ax_bc.twinx()
+    ax_nodes.semilogx(sw_tol, [r["n_nodes"] for r in sweep], "s--", color="C0", alpha=0.7)
+    ax_nodes.set_ylabel("mesh nodes", color="C0")
+    ax_nodes.tick_params(axis="y", labelcolor="C0")
+    ax_bc.set_title("Solver sensitivity to requested tolerance")
+    ax_bc.legend(fontsize=7, loc="lower right")
+    save_figure(fig, f"{out_dir}/p4_convergence.png")
+
+    # --- Terminal residual analysis (Sec. 8.3 / Sec. 9) ---
+    state_syms = [r"$p_x$", r"$p_z$", r"$v_x$", r"$v_z$", r"$\theta$", r"$\omega$", r"$m$"]
+    bc_vec = sp.bc_residual_vec
+    init_res = np.abs(bc_vec[:N_STATE]) if bc_vec.size == 2 * N_STATE else np.zeros(N_STATE)
+    trans_res = np.abs(bc_vec[N_STATE:]) if bc_vec.size == 2 * N_STATE else np.zeros(N_STATE)
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.3))
+    xpos = np.arange(N_STATE)
+    axes[0].bar(xpos - 0.2, np.maximum(init_res, 1e-18), 0.4, color="C0", label=r"initial $|x(0)-x_0|$")
+    axes[0].bar(xpos + 0.2, np.maximum(trans_res, 1e-18), 0.4, color="C3",
+                label=r"transversality $|p(t_f)-2Q_f x(t_f)|$")
+    axes[0].set_yscale("log")
+    axes[0].set_xticks(xpos)
+    axes[0].set_xticklabels(state_syms)
+    axes[0].set(ylabel="residual", title="TPBVP boundary residuals (per component)")
+    axes[0].axhline(1e-6, color="k", ls=":", lw=0.8, alpha=0.7, label="tol = 1e-6")
+    axes[0].legend(fontsize=7)
+    axes[0].grid(True, which="both", axis="y", alpha=0.3)
+
+    metric_labels = [r"init $\|\cdot\|_\infty$", r"transv. $\|\cdot\|_\infty$", "max colloc.", r"$H$ drift"]
+    metric_vals = [
+        max(init_res.max(), 1e-18),
+        max(trans_res.max(), 1e-18),
+        max(float(np.max(sp.rms_residuals)) if sp.rms_residuals.size else 1e-18, 1e-18),
+        max(float(np.max(sp.H) - np.min(sp.H)) if sp.H.size else 1e-18, 1e-18),
+    ]
+    axes[1].bar(metric_labels, metric_vals, color=["C0", "C3", "C1", "C2"])
+    axes[1].set_yscale("log")
+    axes[1].axhline(1e-6, color="k", ls=":", lw=0.8, alpha=0.7)
+    axes[1].set(ylabel="residual norm", title="Optimality residual summary (PMP / nonlinear)")
+    axes[1].tick_params(axis="x", rotation=12)
+    axes[1].grid(True, which="both", axis="y", alpha=0.3)
+    save_figure(fig, f"{out_dir}/p4_terminal_residual.png")
 
     return {
         "J_u_linear": sl["J_u"],

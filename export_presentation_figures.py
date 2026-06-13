@@ -36,11 +36,9 @@ def save_figure(fig, path, *, has_suptitle=False):
     plt.close(fig)
 
 
-def main():
-    os.makedirs(OUT, exist_ok=True)
-    os.makedirs("docs", exist_ok=True)
-    t = exp.default_time_grid(params)
-
+def generate_part1(t):
+    """Part I figures: controllability/Gramian, cost sweep, hover-vs-descent,
+    solution histories, mission-plane attitude quiver, and validation Hamiltonian."""
     with open("docs/controllability_matrices.tex", "w", encoding="utf-8") as f:
         f.write(dyn.controllability_latex_report(params, times=(0.0, 15.0)))
 
@@ -143,6 +141,78 @@ def main():
     axes[0].legend()
     save_figure(fig, f"{OUT}/p1_ic_sensitivity.png")
 
+    # --- Required (Sec. 9): Part I solution trajectories vs time ---
+    uh, ud = cmp["hover"]["u_hist"], cmp["descent"]["u_hist"]
+    state_titles = [
+        r"$p_x$ [m]", r"$p_z$ [m]", r"$v_x$ [m/s]", r"$v_z$ [m/s]",
+        r"$\theta$ [rad]", r"$\omega$ [rad/s]", r"$m$ [kg]",
+    ]
+    ctrl_titles = [r"$\delta T$ [N]", r"$\tau$ [N$\cdot$m]"]
+    fig, axes = plt.subplots(3, 3, figsize=(12, 9))
+    for i in range(7):
+        ax = axes.flat[i]
+        ax.plot(th, xh[:, i], "C0-", label="hover (controllable)")
+        ax.plot(td, xd[:, i], "C3--", label="descent (weakly ctrl.)")
+        ax.set(title=state_titles[i], xlabel="t [s]")
+        ax.grid(True, alpha=0.3)
+    for j in range(2):
+        ax = axes.flat[7 + j]
+        ax.plot(th, uh[:, j], "C0-")
+        ax.plot(td, ud[:, j], "C3--")
+        ax.set(title=ctrl_titles[j], xlabel="t [s]")
+        ax.grid(True, alpha=0.3)
+    axes.flat[0].legend(fontsize=7)
+    save_figure(fig, f"{OUT}/p1_state_control_histories.png")
+
+    # --- Required (Sec. 9): mission-plane (p_x vs p_z) with attitude quivers ---
+    fig, ax = plt.subplots(figsize=(7, 6))
+    for x_hist, t_eff, color, lab in [
+        (xh, th, "C0", "hover (controllable)"),
+        (xd, td, "C3", "descent (weakly ctrl.)"),
+    ]:
+        ax.plot(x_hist[:, 0], x_hist[:, 1], color=color, lw=2, label=lab)
+        step = max(1, len(x_hist) // 16)
+        arrow = 0.7  # body-axis arrow length [m]; theta=0 points "up" (+p_z)
+        ax.quiver(
+            x_hist[::step, 0],
+            x_hist[::step, 1],
+            arrow * np.sin(x_hist[::step, 4]),
+            arrow * np.cos(x_hist[::step, 4]),
+            angles="xy", scale_units="xy", scale=1,
+            color=color, alpha=0.5, width=0.004,
+        )
+    ax.scatter([xh[0, 0]], [xh[0, 1]], c="k", s=55, zorder=5, label=r"$x_0$ (start)")
+    ax.scatter([0.0], [0.0], marker="*", c="g", s=140, zorder=6, label="trim target")
+    ax.set(
+        xlabel=r"$p_x$ deviation [m]",
+        ylabel=r"$p_z$ deviation [m]",
+        title=r"Part I mission plane: $p_x$ vs $p_z$ with attitude",
+    )
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+    ax.axis("equal")
+    save_figure(fig, f"{OUT}/p1_mission_plane_quiver.png")
+
+    # Validation (Sec. 9): Hamiltonian consistency, reusing the rollouts above.
+    p1_results = [
+        val.validate_lqr_regulation(
+            "P1 hover LTI regulation", dyn.get_hover_dynamics,
+            cmp["hover"]["t_eff"], cmp["hover"]["x_hist"], cmp["hover"]["u_hist"],
+            cmp["hover"]["P_interp"], Q, R, Qf, params, t_grid=t,
+            saturation_fraction=cmp["hover"]["constraint_info"].saturation_fraction,
+        ),
+        val.validate_lqr_regulation(
+            "P1 descent LTV regulation", dyn.get_descent_dynamics,
+            cmp["descent"]["t_eff"], cmp["descent"]["x_hist"], cmp["descent"]["u_hist"],
+            cmp["descent"]["P_interp"], Q, R, Qf, params, t_grid=t,
+            saturation_fraction=cmp["descent"]["constraint_info"].saturation_fraction,
+        ),
+    ]
+    val.export_part1_hamiltonian_figure(OUT, p1_results, save_figure)
+
+
+def generate_part2(t):
+    """Part II tracking figures + tracking-Hamiltonian validation."""
     p2 = exp.run_part2_tracking(params, t)
     xref, uref = p2["xref"], p2["uref"]
     x_trk, u_trk = p2["x_trk"], p2["u_trk"]
@@ -156,30 +226,42 @@ def main():
     trim_func = p2["constraints"].trim_func
     err = x_trk - xref[: len(x_trk)]
 
-    fig, axes = plt.subplots(2, 2, figsize=(11, 7))
-    for i, ax in enumerate(axes[0]):
-        ax.plot(t_ref, xref[:, i], label=exp.STATE_LABELS[i])
-        ax.set(title="Reference states $x_{ref}(t)$")
-    for j, ax in enumerate(axes[1]):
-        ax.plot(t_ref, uref[:, j], label=exp.CTRL_LABELS[j])
-        ax.set(title="Reference controls", xlabel="t [s]")
+    fig, axes = plt.subplots(3, 3, figsize=(12, 9))
+    for i in range(7):
+        ax = axes.flat[i]
+        ax.plot(t_ref, xref[:, i], "C0")
+        ax.set(title=exp.STATE_LABELS[i], xlabel="t [s]")
+        ax.grid(True, alpha=0.3)
+    for j in range(2):
+        ax = axes.flat[7 + j]
+        ax.plot(t_ref, uref[:, j], "C1")
+        ax.set(title=exp.CTRL_LABELS[j], xlabel="t [s]")
+        ax.grid(True, alpha=0.3)
     save_figure(fig, f"{OUT}/p2_reference_states_controls.png")
 
+    h = p2["hover_alt"]
     fig, ax = plt.subplots(figsize=(6, 6))
-    ax.plot(xref[:, 0], xref[:, 1], "C0-", lw=2, label=r"$x_{ref}$")
+    ax.plot(xref[:, 0], xref[:, 1] + h, "C0-", lw=2, label=r"$x_{ref}$")
     step = max(1, len(t_ref) // 25)
+    arrow = 0.8  # body-axis arrow [m]; theta=0 points "up" (+p_z)
     ax.quiver(
         xref[::step, 0],
-        xref[::step, 1],
-        0.3 * np.cos(xref[::step, 4]),
-        0.3 * np.sin(xref[::step, 4]),
+        xref[::step, 1] + h,
+        arrow * np.sin(xref[::step, 4]),
+        arrow * np.cos(xref[::step, 4]),
         angles="xy",
         scale_units="xy",
         scale=1,
         alpha=0.6,
     )
-    ax.set(xlabel=r"$p_x$ [m]", ylabel=r"$p_z$ [m]", title="Reference mission trajectory")
-    ax.axis("equal")
+    ax.axhline(0.0, color="k", lw=1.0, ls="-", alpha=0.7, label="ground ($p_z=0$)")
+    ax.set(
+        xlabel=r"$p_x$ [m]",
+        ylabel=r"$p_z$ [m] (absolute)",
+        title=f"Reference mission trajectory (hover at {h:.0f} m)",
+    )
+    ax.legend(fontsize=8, loc="upper right")
+    ax.set_ylim(bottom=-1.0)
     ax.grid(True, alpha=0.3)
     save_figure(fig, f"{OUT}/p2_reference_mission_plane.png")
 
@@ -194,13 +276,29 @@ def main():
     fig.suptitle("Tracking performance: states vs reference")
     save_figure(fig, f"{OUT}/p2_tracking_states_4x2.png", has_suptitle=True)
 
-    fig, ax = plt.subplots(figsize=(6, 6))
-    ax.plot(xref[:, 0], xref[:, 1], "k--", lw=2, label="reference")
-    ax.plot(x_trk[:, 0], x_trk[:, 1], "C0", lw=2, label="tracked")
-    ax.scatter([x0_track[0]], [x0_track[1]], c="C3", s=60, zorder=5, label=r"$x_0$")
-    ax.set(xlabel=r"$p_x$", ylabel=r"$p_z$", title="Mission plane: convergence toward reference")
-    ax.legend()
-    ax.axis("equal")
+    fig, ax = plt.subplots(figsize=(6.5, 6))
+    ax.plot(xref[:, 0], xref[:, 1] + h, "k--", lw=2, label="reference")
+    ax.plot(x_trk[:, 0], x_trk[:, 1] + h, "C0", lw=2, label="tracked")
+    for x_hist, color in [(xref, "k"), (x_trk, "C0")]:
+        step = max(1, len(x_hist) // 18)
+        ax.quiver(
+            x_hist[::step, 0],
+            x_hist[::step, 1] + h,
+            0.8 * np.sin(x_hist[::step, 4]),
+            0.8 * np.cos(x_hist[::step, 4]),
+            angles="xy", scale_units="xy", scale=1,
+            color=color, alpha=0.45, width=0.004,
+        )
+    ax.scatter([x0_track[0]], [x0_track[1] + h], c="C3", s=60, zorder=5, label=r"$x_0$ (tracker)")
+    ax.scatter([0.0], [h], marker="*", c="g", s=150, zorder=6, label="hover target")
+    ax.axhline(0.0, color="k", lw=1.0, ls="-", alpha=0.7, label="ground ($p_z=0$)")
+    ax.set(
+        xlabel=r"$p_x$ [m]",
+        ylabel=r"$p_z$ [m] (absolute)",
+        title="Mission plane: convergence toward reference",
+    )
+    ax.legend(fontsize=8, loc="lower left")
+    ax.set_ylim(bottom=-1.0)
     ax.grid(True, alpha=0.3)
     save_figure(fig, f"{OUT}/p2_mission_plane_convergence.png")
 
@@ -295,6 +393,26 @@ def main():
     )
     save_figure(fig, f"{OUT}/p2_reference_noise_robustness.png")
 
+    # Validation (Sec. 9): tracking-Hamiltonian consistency, reusing the rollouts above.
+    Q2f = p2["Qf"]
+    p2_results = [
+        val.validate_lqr_regulation(
+            "P2 reference (regulation plan)", df, t_ref, xref, uref, p2["P_reg"],
+            Q2, R2, Q2f, params, t_grid=t,
+            saturation_fraction=p2["ref_info"].saturation_fraction,
+        ),
+        val.validate_lqr_tracking(
+            "P2 tracking closed loop", df, t_trk, x_trk, u_trk, xref[: len(x_trk)],
+            P_trk, s_interp, Q2, R2, params, t_grid=t,
+            xref_interp=p2["xref_interp"],
+            saturation_fraction=p2["trk_info"].saturation_fraction,
+        ),
+    ]
+    val.export_part2_hamiltonian_figure(OUT, p2_results, save_figure)
+
+
+def generate_validation(t):
+    """Cross-cutting Section 9 residual/summary figures over all implemented parts."""
     val_results = val.run_all_validations(params, t)
     try:
         val.export_validation_figures(OUT, val_results, save_figure)
@@ -302,6 +420,8 @@ def main():
         print(f"Validation figure export skipped: {exc}")
     val.print_report(val_results)
 
+
+def generate_part3(t):
     try:
         p3_m1 = exp.run_part3_mission(params, manifold="M1", verbose=True)
         p3_m2 = exp.run_part3_mission(params, manifold="M2", verbose=True)
@@ -314,8 +434,11 @@ def main():
         import traceback
         traceback.print_exc()
 
+
+def generate_part4(t):
     try:
-        p4 = exp.run_part4_nonlinear(params, t, verbose=True)
+        t4 = exp.part4_time_grid(params)
+        p4 = exp.run_part4_nonlinear(params, t4, verbose=True)
         nl.print_part4_report(p4)
         p4_stats = nl.export_part4_figures(p4, OUT, save_figure)
         val.print_report(val.validate_part4(p4, params))
@@ -323,7 +446,7 @@ def main():
 
         theta_scales = np.linspace(0.75, 2.5, 5)
         sens = nl.angle_sensitivity(
-            params, t, p4["Q"], p4["R"], p4["Qf"], exp.DEFAULT_X0_PART4, theta_scales,
+            params, t4, p4["Q"], p4["R"], p4["Qf"], exp.DEFAULT_X0_PART4, theta_scales,
         )
         ok = [r for r in sens if r.get("bvp_success")]
         if ok:
@@ -350,8 +473,38 @@ def main():
         import traceback
         traceback.print_exc()
 
+
+PART_GENERATORS = {
+    "1": generate_part1,
+    "2": generate_part2,
+    "3": generate_part3,
+    "4": generate_part4,
+    "validation": generate_validation,
+}
+
+
+def main(parts=None):
+    os.makedirs(OUT, exist_ok=True)
+    os.makedirs("docs", exist_ok=True)
+    t = exp.default_time_grid(params)
+
+    selected = parts or list(PART_GENERATORS)
+    for key in selected:
+        print(f"--- generating: part {key} ---")
+        PART_GENERATORS[key](t)
+
     print(f"Wrote {len(os.listdir(OUT))} figures to {OUT}/")
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Regenerate presentation/report figures.")
+    parser.add_argument(
+        "--parts",
+        nargs="+",
+        choices=list(PART_GENERATORS),
+        help="Subset of parts to regenerate (default: all).",
+    )
+    args = parser.parse_args()
+    main(args.parts)

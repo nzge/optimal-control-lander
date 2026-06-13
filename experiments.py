@@ -22,16 +22,41 @@ TRACKING_Q_DIAG = [1.0, 1.0, 0.5, 0.5, 10.0, 5.0, 0.01]
 TRACKING_R_DIAG = [0.1, 1.0]
 TRACKING_QF_DIAG = [10.0, 10.0, 1.0, 1.0, 50.0, 20.0, 0.1]
 
+# Part II operating point: the tracking maneuver is executed about a hover point
+# PART2_HOVER_ALT metres above the pad. The hover linearization is altitude-invariant
+# (p_z is decoupled), so A, B, the reference, and the feedback law are unchanged; the
+# offset only sets the absolute altitude p_z = PART2_HOVER_ALT + p_z^dev used for the
+# ground constraint p_z >= 0, keeping the full-horizon rollout feasible.
+PART2_HOVER_ALT = 12.0
+
 
 def default_time_grid(params, n=401):
     return np.linspace(0.0, params["tf_descent"], n)
 
 
-def rollout_constraints(params, dynamics_func, *, enforce_control=True, enforce_state=True):
-    """Build constraint config matched to a dynamics linearization."""
+def part4_time_grid(params, n=201):
+    """Short near-hover horizon for the Part IV nonlinear problem."""
+    return np.linspace(0.0, params["tf_part4"], n)
+
+
+def part2_constraint_trim(t, params):
+    """Hover trim raised to the Part II operating altitude (for the ground check)."""
+    trim = dict(dyn.hover_trim(t, params))
+    trim["pz"] = PART2_HOVER_ALT
+    return trim
+
+
+def rollout_constraints(
+    params, dynamics_func, *, enforce_control=True, enforce_state=True, trim_func=None
+):
+    """Build constraint config matched to a dynamics linearization.
+
+    ``trim_func`` overrides the trim used for the absolute-state (ground/mass)
+    feasibility check; defaults to the trim matching ``dynamics_func``.
+    """
     return cst.RolloutConstraints(
         params=params,
-        trim_func=cst.trim_for_dynamics(dynamics_func),
+        trim_func=trim_func or cst.trim_for_dynamics(dynamics_func),
         enforce_control=enforce_control,
         enforce_state=enforce_state,
     )
@@ -81,11 +106,17 @@ def run_part2_tracking(
         dynamics_func = dyn.get_hover_dynamics
 
     Q, R, Qf = tracking_cost_matrices()
+    # Run the maneuver about a hover point PART2_HOVER_ALT above the pad so the
+    # ground constraint p_z >= 0 holds over the full horizon (hover linearization
+    # is altitude-invariant, so dynamics/reference/feedback are unchanged).
+    p2_trim = part2_constraint_trim if dynamics_func is dyn.get_hover_dynamics else None
     ref_constraints = rollout_constraints(
-        params, dynamics_func, enforce_control=enforce_control, enforce_state=False
+        params, dynamics_func, enforce_control=enforce_control,
+        enforce_state=False, trim_func=p2_trim,
     )
     trk_constraints = rollout_constraints(
-        params, dynamics_func, enforce_control=enforce_control, enforce_state=enforce_state
+        params, dynamics_func, enforce_control=enforce_control,
+        enforce_state=enforce_state, trim_func=p2_trim,
     )
 
     A, B = dynamics_func(0.0, params)
@@ -132,6 +163,7 @@ def run_part2_tracking(
         "s_interp": s_interp,
         "xref_interp": xref_interp,
         "trk_ctrl": trk_ctrl,
+        "hover_alt": PART2_HOVER_ALT if p2_trim is not None else 0.0,
     }
 
 
@@ -140,19 +172,20 @@ def run_part3_mission(
     *,
     x0=None,
     manifold="M1",
+    vz_sky=0.0,
     Z0=None,
     verbose=False,
     multi_start=True,
 ):
     """
-    Part III pipeline: min-time ascent + free-final-time landing (single shooting).
-    Returns ``MissionSolution`` and cost matrices for Phase B.
+    Part III pipeline: min-time ascent to a fixed x_sky + free-final-time landing.
+    Returns the ``MissionSolution`` and Phase-B cost matrices.
     """
     if x0 is None:
         x0 = DEFAULT_X0_MISSION.copy()
     Q, R = mis.mission_cost_matrices(manifold)
     sol = mis.solve_mission(
-        x0, params, manifold=manifold, Z0=Z0, verbose=verbose,
+        x0, params, manifold=manifold, vz_sky=vz_sky, Z0=Z0, verbose=verbose,
         multi_start=multi_start, target_tol=mis.TARGET_TOL,
     )
     return {
@@ -162,6 +195,7 @@ def run_part3_mission(
         "Q": Q,
         "R": R,
         "manifold": manifold,
+        "vz_sky": vz_sky,
     }
 
 
@@ -182,7 +216,7 @@ def run_part4_nonlinear(
     3. Nonlinear PMP (TPBVP) on nonlinear dynamics
     """
     if t_grid is None:
-        t_grid = default_time_grid(params)
+        t_grid = part4_time_grid(params)
     if x0 is None:
         x0 = DEFAULT_X0_PART4.copy()
         x0[4] = DEFAULT_X0_PART4[4] * theta_scale

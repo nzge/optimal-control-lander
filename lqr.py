@@ -64,7 +64,9 @@ def solve_riccati_backward(dynamics_func, t_grid, Q, R, Qf, params):
         raise RuntimeError(f"Riccati integration failed: {sol.message}")
 
     t_P = sol.t[::-1]
-    P_hist = np.array([_unpack_P(sol.y[:, i], n) for i in range(sol.t.size)])
+    # solve_ivp integrates tf -> t0, so sol columns are in decreasing-time order.
+    # Reverse to match the increasing t_P grid used by the interpolator/validators.
+    P_hist = np.array([_unpack_P(sol.y[:, i], n) for i in range(sol.t.size)])[::-1]
 
     def P_interp(t):
         t = np.clip(t, t0, tf)
@@ -105,7 +107,8 @@ def solve_tracking_feedforward(dynamics_func, t_grid, Q, R, xref_grid, P_interp,
         raise RuntimeError(f"Tracking feedforward ODE failed: {sol.message}")
 
     t_s = sol.t[::-1]
-    s_hist = sol.y.T
+    # Match increasing t_s grid (solve_ivp integrated tf -> t0).
+    s_hist = sol.y.T[::-1]
 
     def s_interp(t):
         t = np.clip(t, t0, tf)

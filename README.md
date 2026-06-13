@@ -1,14 +1,8 @@
 # optimal-control-lander
 
-Optimal Control of a Variable-Mass Thrust-Vectoring Lander (ECE 270C Final Project)
+Optimal Control of a Variable-Mass Thrust-Vectoring Lander (MAE 270C Final Project)
 
-## Presentation (Parts I & II)
-
-Full slide-by-slide draft with derivations, numerical results, and graph interpretation:
-
-- **[PRESENTATION_PARTS_I_II.md](PRESENTATION_PARTS_I_II.md)**
-
-Regenerate all figures:
+To run the full simulation AND generate figures for parts I-IV:
 
 ```bash
 source .venv/bin/activate

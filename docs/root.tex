@@ -67,6 +67,8 @@ This project studies the optimal guidance and control of a planar variable-mass 
 \end{abstract}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+github repository: \href{link}{https://github.com/nzge/optimal-control-lander}
+
 \section{Problem Formulation}
 
 The state space of the lander can be represented as: 
@@ -160,12 +162,12 @@ The nonlinear equations of motion governing the lander, $\dot{x} = f(x, u)$, are
 $scipy.integrate.solve\_ivp$ integrates the Riccati equation backward in time to generate the feedback gain matrix $K(t)$. An interpolator was then used on this gain during the forward-pass simulation of the state trajectory.
 
 \subsection{Nonlinear TPBVP Solvers (Parts III \& IV)}
-The Riccati substitution fails for nonlinear dynamics. Indirect Shooting was used to tackle the coupled state/costate equations.
+The Riccati substitution no longer applies once the optimal control problem is nonlinear, so the coupled state/costate system arising from PMP is solved directly. Part~III uses \emph{indirect single shooting} on the free-final-time mission: the $2n$ canonical equations are integrated forward and a Newton iteration adjusts the unknown initial costate, the phase-switch time, and the final time until the manifold, transversality, and $H(t_f)=0$ residuals vanish. Part~IV uses \emph{indirect collocation} (\texttt{scipy.integrate.solve\_bvp}) on the fixed-time problem: the $14$ state/costate equations are discretized on a mesh and the optimal control is substituted in closed form from the stationarity conditions. Collocation is preferred for Part~IV because it accepts a full state/costate \emph{trajectory} as its initial guess, which is taken from the corresponding linearized LQR solution; this warm start lies close to the nonlinear extremal and lets the solver converge in a few mesh-refinement iterations. In both parts the actuator bounds are imposed by saturating the PMP-optimal control, consistent with Pontryagin's pointwise minimization of $H$ over the admissible control set.
 
 \subsection{Constraint Enforcement Strategies}
 
 \begin{itemize}
-    \item Control Constraints ($T, \tau$): For the linear case, I applied post-calculation saturation (clipping the LQR commanded thrust). For nonlinear phases, PMP mathematically handles the bounds or how you passed them as boundary arrays to a collocation solver.
+    \item Control Constraints ($T, \tau$): For the linear LQR phases I applied post-calculation saturation, clipping the commanded $\delta T$ and $\tau$ to $[T_{\min},T_{\max}]$ and $[\tau_{\min},\tau_{\max}]$. For the nonlinear PMP phases the control follows in closed form from the stationarity condition $\partial H/\partial u = 0$ and is then clipped to the same actuator bounds inside the solver right-hand side; this is exactly Pontryagin's pointwise minimization of $H$, since for the control-affine Hamiltonian the constrained minimizer is the unconstrained stationary control projected onto the admissible box.
     \item State Constraints ($p_z \ge 0$, $m \ge m_{dry}$): Adjoining state constraints directly to the PMP Hamiltonian creates severe analytical difficulties (jump discontinuities in the costates). The numerical workaround is to either:
     \begin{itemize}
         \item "Soft Constraints" (adding massive penalties to your $Q$ matrix if the rocket goes underground)
@@ -494,12 +496,26 @@ $t_f - t$ shrinks, especially for horizontal motion (as shown by the proxy).
 
         $p_x$ and $\theta$ swings indicate structural difficulty. Even “controllable” hover struggles. Gramian analysis flagged as expensive to correct. The gap is clearest in $p_z$ (mass/thrust schedule, changing trim). Descent worse
 
+        \begin{figure}[H]
+            \centering
+            \includegraphics[width=\linewidth]{figures/p1_state_control_histories.png}
+            \caption{Optimal solution trajectories versus time: states and control histories.}
+            \label{fig:p1_state_hist}
+        \end{figure}
+
+        \begin{figure}[H]
+            \centering
+            \includegraphics[width=0.85\linewidth]{figures/p1_mission_plane_quiver.png}
+            \caption{Mission-plane trajectory ($p_x$ vs $p_z$) with attitude vectors at sampled positions.}
+            \label{fig:p1_mission_plane}
+        \end{figure}
+
         \subsection{Validation}
 
         \begin{figure}[H]
             \centering
-            \includegraphics[width=\linewidth]{figures/p1_weak_direction_transients.png}
-            \caption{Transient behavior}
+            \includegraphics[width=\linewidth]{figures/p1_hamiltonian.png}
+            \caption{Hamiltonian evolution}
         \end{figure}
         
         Because this phase utilizes the Riccati sweep method rather than a shooting solver, optimality is validated by verifying the backward-pass terminal conditions and forward-pass tracking convergence. Table \ref{tab:val_p1} confirms the Riccati matrix $P(t)$ strictly satisfies the terminal boundary condition $P(t_f) = Q_f$. Additionally, the closed-loop tracking error $e(t)$ is bounded within acceptable numerical tolerances at the final time.
@@ -527,13 +543,14 @@ $t_f - t$ shrinks, especially for horizontal motion (as shown by the proxy).
 
 \subsection{Phase formulation}
 
-Objective:
+Objective (free final state, no terminal cost, as specified for Part~II):
 \[
-    \begin{split}
-    J = {}&\int_{0}^{t_f} \Big[ (x - x_{\text{ref}})^\top Q (x - x_{\text{ref}}) + u^\top R u \Big] dt \\
-    &+ (x(t_f) - x_{\text{ref}}(t_f))^\top Q_f (x(t_f) - x_{\text{ref}}(t_f))
-    \end{split}
+    J = \int_{0}^{t_f} \Big[ (x - x_{\text{ref}})^\top Q (x - x_{\text{ref}}) + u^\top R u \Big] dt
 \]
+
+\subsection{Scenario and Operating Point}
+
+The reference $x_{\text{ref}}(t)$ is one of the optimal regulation trajectories recorded in Part I (Fig.~\ref{fig:p2_ref_overview}): a damped maneuver that settles to the hover trim. To produce a nontrivial transient, the controller is initialized at a \emph{substantially different} state, $x_0^{\text{trk}} = [-12,\,15,\,-4,\,3,\,-0.25,\,0.4,\,-0.8]^\top$, deviating from the reference start by $\Delta p_x \approx 17$~m and $\Delta\theta \approx 0.33$~rad. Because the hover linearization is altitude-invariant ($p_z$ is decoupled and absent from every right-hand side), the maneuver is executed about a hover point $h = 12$~m above the pad; this leaves $A$, $B$, $x_{\text{ref}}$, and the feedback law unchanged while the absolute altitude $p_z = h + p_z^{\text{dev}}$ is used to enforce the ground constraint $p_z \geq 0$. The numerically enforced state constraints $p_z \geq 0$ and $m \geq m_{\text{dry}}$ are satisfied throughout: the minimum absolute altitude is $11.6$~m (reference) and $10.0$~m (tracker), and the mass margin remains above $12$~kg.
 
 \subsection{Analytical Derivations (PMP)}
 
@@ -550,8 +567,9 @@ Objective:
     \[\frac{\partial H}{\partial u} = 0 \implies 2Ru + B^\top p = 0 \implies u^* = -\frac{1}{2} R^{-1} B^\top p\]
     
     \item Transversality (Terminal Condition):
-    \[p(t_f) = \frac{\partial \phi}{\partial x} \bigg|_{t=t_f}\]
-    \[p(t_f) = 2Q_f(x(t_f) - x_{\text{ref}}(t_f)) \]
+
+        With a free final state and no terminal cost ($\phi \equiv 0$), the transversality condition gives a homogeneous terminal costate:
+    \[p(t_f) = \frac{\partial \phi}{\partial x} \bigg|_{t=t_f} = 0 \]
     
     \item Tracking Riccati Equations (Riccati substitution)
     
@@ -587,6 +605,10 @@ Objective:
             \item Auxiliary Vector Differential Equation (The Feedforward Tracker):
             \[\dot{s} = - \left( A^\top - \frac{1}{2}PBR^{-1}B^\top \right) s + 2Q x_{\text{ref}}\]
         \end{itemize}
+
+        Since $p(t_f) = P(t_f)x(t_f) + s(t_f) = 0$ must hold for an arbitrary terminal state, both pieces are integrated backward from the homogeneous terminal conditions
+        \[P(t_f) = 0, \qquad s(t_f) = 0,\]
+        reflecting the absence of any terminal penalty in the Part~II objective.
         
     
     \item Closed-Loop Tracking Control Law
@@ -611,6 +633,31 @@ Objective:
         
         Tracker rejoins the reference qualitatively. Errors shrink and shapes align by mid-horizon.
 
+        \begin{figure}[H]
+            \centering
+            \includegraphics[width=\linewidth]{figures/p2_reference_states_controls.png}
+            \caption{Recorded Part I optimal trajectory used as the reference $x_{\text{ref}}(t)$, $u_{\text{ref}}(t)$.}
+            \label{fig:p2_ref_overview}
+        \end{figure}
+
+        Quantitatively, the tracker starts with state error $\lVert e(0)\rVert \approx 19.9$, peaks at $\lVert e\rVert \approx 26.2$ near $t = 1.6$~s as it first accelerates toward the reference, and the cost-weighted error decays to within $10\%$ of its peak by $t \approx 6.9$~s. The residual terminal error $\lVert e(t_f)\rVert \approx 1.38$ is concentrated in the vertical and mass channels ($|e_{p_z}| \approx 1.16$, $|e_{v_z}| \approx 0.67$, $|e_m| \approx 0.32$); the horizontal and attitude errors are driven to $\mathcal{O}(10^{-3})$. This residual is an expected feature of the fixed-horizon, free final-state problem with no terminal cost ($P(t_f)=0$): as $t \to t_f$ the Riccati gain $K(t)$ and feedforward $s(t)$ both decay, so the controller ``relaxes'' near $t_f$ and the weakly penalized vertical/mass states drift slightly.
+
+        The required mission-plane views (Figs.~\ref{fig:p2_ref_plane}--\ref{fig:p2_conv_plane}) plot $p_x$ versus $p_z$ with body-axis attitude arrows. The tracker spirals down from its displaced initial state and converges onto the reference at the hover target, remaining well above the ground line throughout.
+
+        \begin{figure}[H]
+            \centering
+            \includegraphics[width=0.78\linewidth]{figures/p2_reference_mission_plane.png}
+            \caption{Reference mission trajectory in the $p_x$--$p_z$ plane with attitude.}
+            \label{fig:p2_ref_plane}
+        \end{figure}
+
+        \begin{figure}[H]
+            \centering
+            \includegraphics[width=0.82\linewidth]{figures/p2_mission_plane_convergence.png}
+            \caption{Closed-loop convergence of the tracker onto the reference, with attitude arrows and the ground constraint $p_z = 0$.}
+            \label{fig:p2_conv_plane}
+        \end{figure}
+
     \item Transient Response
 
         \begin{figure}[H]
@@ -629,41 +676,80 @@ Objective:
             \label{fig:transient_resp2}
         \end{figure}
 
-    \item \begin{figure}[H]
+        The control splits as $u^*(t) = -K(t)\,e(t) + u_{ff}(t)$. The feedback term dominates the transient and drives the large initial error to zero, while the feedforward term $u_{ff} = -R^{-1}B^\top s$ is small and slowly varying because the reference is itself a decaying signal. The torque channel uses nearly the full authority at $t=0$ ($\tau \approx 29.6$~N$\cdot$m against the $\pm 30$~N$\cdot$m bound) to arrest the attitude error, but no channel saturates over the horizon.
+
+    \item Control Effort
+
+        \begin{figure}[H]
             \centering
             \includegraphics[width=\linewidth]{figures/p2_control_effort.png}
             \caption{Control Effort}
             \label{fig:control_effort}
         \end{figure}
 
-    \item \begin{figure}[H]
+        Relative to the smooth reference plan, rejoining from the displaced initial state is expensive: the tracker expends $\int u^\top R u\,dt \approx 1041$ versus $\approx 86$ for the reference, a $12\times$ increase concentrated in the first few seconds. Peak thrust deviation reaches $\delta T \approx 92$~N (within the $+104$~N headroom to $T_{\max}$), confirming that the chosen weights keep the catch-up maneuver feasible without thrust saturation. Once the error is nulled, the tracking control collapses onto the reference control.
+
+    \item Robustness to Deviations from the Nominal Trajectory
+
+        \begin{figure}[H]
             \centering
             \includegraphics[width=\linewidth]{figures/p2_ic_robustness.png}
-            \caption{Robustness to deviations from the nominal trajectory.}
+            \caption{Robustness to initial-condition deviations: terminal error and tracking cost as the initial offset is scaled by $\alpha$.}
             \label{fig:robustness}
+        \end{figure}
+
+        Sweeping the initial offset by a factor $\alpha$ confirms the structure of the linear tracking law: the terminal error grows essentially \emph{linearly} in $\alpha$ (slope $\approx 1.18$), consistent with superposition of the closed-loop transition map, while the tracking cost grows \emph{quadratically} (the cost is a quadratic form in the deviation). There is no threshold or instability over the tested range, demonstrating graceful degradation with respect to initial-condition error.
+
+        Robustness to errors in the assumed reference is examined in Fig.~\ref{fig:p2_ref_noise}, where the reference used to build the feedforward is corrupted by zero-mean noise of level $\sigma$ and the resulting controller is scored against the \emph{true} reference. The terminal error is only mildly affected (from $1.38$ at $\sigma = 0$ to $1.50$ at $\sigma = 0.30$) because the feedback term rejects high-frequency reference error, but the tracking cost degrades markedly (from $\approx 3150$ to $\approx 6810$, a $2.2\times$ increase) as the controller wastes effort chasing the corrupted plan.
+
+        \begin{figure}[H]
+            \centering
+            \includegraphics[width=\linewidth]{figures/p2_reference_noise_robustness.png}
+            \caption{Sensitivity to a perturbed reference plan: terminal error and cost (scored against the true reference) versus reference noise level $\sigma$.}
+            \label{fig:p2_ref_noise}
         \end{figure}
 
 \end{itemize}
 
-What if the reference trajectory is not known in advance? Your discussion must explain what challenges does your current approach face and why.
+\subsection{Discussion: Unknown Reference Trajectory}
+
+What if the reference trajectory is not known in advance? The present design is fundamentally \emph{non-causal}: the feedforward $s(t)$ is obtained by integrating $\dot{s} = -(A^\top - PBR^{-1}B^\top)\,s + Q\,x_{\text{ref}}$ \emph{backward} from $s(t_f)=0$, which requires the entire future reference $\{x_{\text{ref}}(\tau): \tau \in [t, t_f]\}$ to be available at the current time $t$. Three challenges follow directly:
+
+\begin{itemize}
+    \item \textbf{Loss of anticipation.} If only the present (or causally measured) reference is known, $s(t)$ cannot be computed and the controller collapses to pure feedback $u = -K(t)\,e(t)$. This still stabilizes the error dynamics, but it lags a time-varying reference and incurs larger transient and steady tracking error, since the anticipatory term that pre-positions the control is gone.
+    \item \textbf{Sensitivity to reference model error.} As Fig.~\ref{fig:p2_ref_noise} shows, the feedforward is only as good as the assumed plan: errors in $x_{\text{ref}}$ propagate into a wrong $s(t)$ and degrade cost even when terminal accuracy is preserved. An online-estimated or predicted reference inherits this sensitivity.
+    \item \textbf{No replanning.} The finite-horizon Riccati pair is computed once for a fixed $[0,t_f]$ and a fixed plan; it cannot react to a reference that is revealed, revised, or re-targeted online.
+\end{itemize}
+
+These limitations motivate causal alternatives that the present formulation does not provide: a receding-horizon (model-predictive) reformulation that re-solves the tracking problem over a moving window as new reference information arrives, a causal reference model/observer that predicts $x_{\text{ref}}$ ahead, or a feedforward driven by an online reference generator. Each restores anticipation at the cost of repeated online optimization.
 
 \subsection{Validation}
 
-Optimality is validated by verifying the backward-pass terminal conditions and forward-pass tracking convergence. Table \ref{tab:val_p2} confirms the Riccati matrix $P(t)$ strictly satisfies the terminal boundary condition $P(t_f) = Q_f$. Additionally, the closed-loop tracking error $e(t)$ is bounded within acceptable numerical tolerances at the final time.
+Because the Part~II objective has no terminal cost and the final state is free, optimality is certified against the PMP necessary conditions rather than terminal convergence. The tracking Riccati pair satisfies the homogeneous free-terminal conditions $P(t_f)=0$ and $s(t_f)=0$, and the stationarity condition $Ru + B^\top \lambda = 0$ (with costate $\lambda = P(t)\,e(t) + s(t)$) holds along the entire closed-loop rollout. Table~\ref{tab:val_p2} reports these residuals at the level of machine precision. The terminal tracking error is \emph{not} required to vanish for this free-final-state problem; its value ($\lVert e(t_f)\rVert_\infty \approx 1.16$, dominated by the vertical/mass relaxation analyzed above) is a result, not a residual.
 
 \begin{table}[H]
 \centering
 \footnotesize
-\caption{Riccati and Tracking Validation (Phase I/II)}
+\caption{Part II Tracking: PMP Optimality Residuals}
 \label{tab:val_p2}
 \begin{tabular}{@{}lllc@{}}
 \toprule
 Metric & Target & Computed & Error (Residual) \\ \midrule
-$||P(t_f) - Q_f||_\infty$ & $0$ & $1.22 \times 10^{-14}$ & $1.22 \times 10^{-14}$ \\
-$||e(t_f)||_\infty$ & $0$ & $4.51 \times 10^{-6}$ & $4.51 \times 10^{-6}$ \\
+$\|P(t_f)\|_\infty$ (Riccati terminal) & $0$ & $1.0 \times 10^{-14}$ & $1.0 \times 10^{-14}$ \\
+$\|s(t_f)\|_\infty$ (feedforward terminal) & $0$ & $1.6 \times 10^{-17}$ & $1.6 \times 10^{-17}$ \\
+$\max_t \|Ru + B^\top \lambda\|$ (stationarity) & $0$ & $1.1 \times 10^{-14}$ & $1.1 \times 10^{-14}$ \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+The state-equation defect of the RK4 rollout is $\mathcal{O}(10^{-1})$ at the chosen step. Figure~\ref{fig:p2_hamiltonian} shows the Hamiltonian evolution: for the autonomous reference plan $H$ is constant to $\sim 10^{-4}$, whereas for the tracking problem $H$ is intentionally time-varying because the explicit dependence on $x_{\text{ref}}(t)$ makes $\partial H/\partial t \neq 0$ -- the relevant optimality certificate for tracking is the stationarity/costate residual rather than constancy of $H$.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{figures/p2_hamiltonian.png}
+    \caption{Hamiltonian consistency: constant for the autonomous reference plan and time-varying for the tracking problem.}
+    \label{fig:p2_hamiltonian}
+\end{figure}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \newpage
@@ -694,7 +780,20 @@ U_{\min, i} & \text{if } S_i(t) > 0
 
 \[H_A(t) \equiv 0 \implies 1 + p(t)^\top \big(Ax(t) + Bu^*(t)\big) = 0 \quad \forall t \in [0, t_1]\]
 
+\subsubsection*{Endpoint and Free-Final-Time Conditions}
+
+The ascent drives the vehicle to a \emph{prescribed} rendezvous state. The first six components of the state are fixed at $t_1$, while the terminal mass is left free, so the corresponding costate vanishes by transversality:
+\[
+\begin{aligned}
+x_i(t_1) &= x_{sky,i}, \quad i \in \{p_x, p_z, v_x, v_z, \theta, \omega\}, \\
+p_m(t_1) &= 0 \quad \text{(free terminal mass)}.
+\end{aligned}
+\]
+Because $t_1$ is free, the minimum-time transversality condition closes the system with $H_A(t_1)=0$. The decision variables $\big(p(0)\in\mathbb{R}^7,\ t_1\big)$ are matched against the eight residuals $\{x_{1:6}(t_1)-x_{sky,1:6},\ p_m(t_1),\ H_A(t_1)\}$.
+
 \subsubsection*{Implementation}
+
+The Phase~A two-point boundary value problem is solved by indirect single shooting: the combined state--costate system $(\dot{x}=Ax+Bu^\star,\ \dot{p}=-A^\top p)$ is integrated with the bang--bang thrust law, and the eight endpoint residuals above are driven to zero by a multi-start Levenberg--Marquardt least-squares solve. The torque switching function $S_\tau=(B^\top p)_2=p_\omega/I$ is identically singular for the vertical ascent (the rotational subsystem starts and ends at $\theta=\omega=0$ and is decoupled), so the optimal torque is the trim value $\tau^\star=0$ and the only active bang--bang channel is the thrust deviation $\delta T$. The rendezvous target is $x_{sky}=(0,\,p_{z,sky},\,0,\,v_{z,sky},\,0,\,0)$ with $p_{z,sky}=8$~m; the terminal vertical velocity $v_{z,sky}\in\{-2,0,+2\}$~m/s is swept for the comparison required by the problem statement.
 
 \subsubsection*{Ascent Trajectory Results}
 
@@ -708,7 +807,21 @@ Whether the optimal strategy front-loads or back-loads energy consumption.
 
 Note that the behavior largely depends on the choice of $x_{sky}$. Choose the terminal velocity to be zero versus it is positive/negative and compare.
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{figures/p3_phaseA_terminal_velocity.png}
+    \caption{Phase~A minimum-time ascent for terminal vertical velocities $v_{z,sky}\in\{-2,0,+2\}$~m/s: altitude $p_z(t)$, vertical velocity $v_z(t)$, bang--bang thrust deviation $\delta T(t)$, and switching function $S_{\delta T}=(B^\top p)_1$. Each case exhibits a single thrust switch; the switch time, total ascent time $t_1$, and propellant use vary with $v_{z,sky}$.}
+    \label{fig:p3_phaseA_vz}
+\end{figure}
+
 \subsubsection*{Validation}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{figures/p3_switching_controls.png}
+    \caption{Phase~A switching function $S_{\delta T}(t)$ (top) and full mission control histories $\delta T(t),\ \tau(t)$ (bottom) for M1 and M2; the dotted line marks the Phase~A/Phase~B handoff $t_1$. The single sign change of $S_{\delta T}$ confirms the bang--bang structure with one switch.}
+    \label{fig:p3_switching}
+\end{figure}
 
 \subsection{Phase B — Return-and-Land Problem}
 
@@ -807,7 +920,27 @@ H_B(t_f) = 0 \implies & x(t_f)^\top Q x(t_f) + u(t_f)^\top R u(t_f) \\
             \[\frac{p_{p_x}(t_f)}{p_{p_z}(t_f)} = \frac{p_x(t_f) - p_c}{p_z(t_f)}\]
         \end{itemize}  
 \end{itemize}
- 
+
+\subsubsection*{Numerical Implementation}
+
+The free-final-time landing problem is solved as a true indirect PMP boundary value problem by collocation. The combined state--costate system $(\dot{x}=Ax+Bu^\star,\ \dot{p}=-2Qx-A^\top p)$ with the stationarity law $u^\star=\mathrm{sat}\!\big(-\tfrac12 R^{-1}B^\top p\big)$ is mapped onto $s\in[0,1]$ via $t=t_1+s\,(t_f-t_1)$, and the unknown duration $t_f-t_1$ enters as a free parameter. The split boundary conditions are the handoff $x(t_1)=x_1$, the seven manifold endpoint and transversality residuals (Section~7.3: $\{p_z,v_z,\theta,p_{p_x},p_{v_x},p_\omega,p_m\}$ for M1; $\{h_1,v_z,\theta,p_{v_x},p_\omega,p_m,\text{collinearity}\}$ for M2), and the free-time closure $H_B(t_f)=0$, giving the fifteen conditions required for the fourteen states plus the parameter. The platform is centred at $(p_c,0)=(0,0)$ so that M1 (flat ground) lands at $(0,0)$ and M2 (circular platform) lands at the apex $(0,r)$; both share the same horizontal footprint, isolating the effect of the terminal-manifold geometry. Among the multiple $t_f$ local optima satisfying the necessary conditions, the global minimiser of $J_B$ that respects $p_z\ge0$ throughout is retained.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.49\linewidth]{figures/p3_trajectory_M1.png}
+    \hfill
+    \includegraphics[width=0.49\linewidth]{figures/p3_trajectory_M2.png}
+    \caption{Mission-plane trajectories $p_x$ vs $p_z$ with body-attitude vectors at sampled positions: M1 flat-ground landing (left, touchdown at the origin) and M2 circular-platform landing (right, touchdown at the platform apex). The ascent (Phase~A) reaches $x_{sky}$ (star); the descent (Phase~B) tracks the optimal landing arc.}
+    \label{fig:p3_traj}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\linewidth]{figures/p3_trajectory_M1_M2_overlay.png}
+    \caption{Overlaid M1 and M2 mission planes. Both scenarios share the launch site, $x_{sky}$, and horizontal footprint; they differ only in the terminal manifold (flat ground at $(0,0)$ vs.\ circular platform apex at $(0,r)$).}
+    \label{fig:p3_overlay}
+\end{figure}
+
 \subsubsection*{Landing Manifold Comparison}
 
 \begin{itemize}
@@ -820,9 +953,38 @@ H_B(t_f) = 0 \implies & x(t_f)^\top Q x(t_f) + u(t_f)^\top R u(t_f) \\
 
 How the geometry of the terminal manifold affects the resulting optimal trajectory and control structure.
 
-
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{figures/p3_manifold_comparison.png}
+    \caption{M1 vs M2 comparison along the five required axes: total landing time $t_f$, Phase~B duration, Phase~B control energy $\int u^\top R u\,dt$, Phase~A thrust switches, shooting feasibility $\lVert res\rVert_\infty$ (against the $10^{-5}$ target), and terminal sensitivity to $\pm\delta x_0$ handoff perturbations.}
+    \label{fig:p3_comparison}
+\end{figure}
 
 \subsubsection*{Validation}
+
+All Part~III necessary conditions are verified to numerical tolerance: the terminal manifold and transversality residuals, the free-final-time condition $H_B(t_f)=0$, the Hamiltonian consistency $H_A\equiv0$ (minimum time) and $H_B\equiv0$ (free final time, autonomous), and the state constraint $p_z\ge0$ along the full trajectory. Table~\ref{tab:val_p3} reports the computed residuals.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\caption{Part III Mission: PMP / TPBVP Validation Residuals}
+\label{tab:val_p3}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Metric & M1 (flat) & M2 (platform) \\ \midrule
+Shooting $\lVert res\rVert_\infty$ (target $10^{-5}$) & $6.2\times10^{-8}$ & $6.2\times10^{-8}$ \\
+Terminal manifold $\lVert res\rVert_\infty$ & $7.0\times10^{-21}$ & $1.1\times10^{-14}$ \\
+Free-time condition $H_B(t_f)$ & $-7.0\times10^{-21}$ & $0.0$ \\
+$H_A$ drift (min-time, $\equiv0$) & $2.9\times10^{-9}$ & $2.9\times10^{-9}$ \\
+$H_B$ drift (free-time, $\equiv0$) & $9.7\times10^{-12}$ & $9.6\times10^{-11}$ \\
+Min.\ altitude $p_z$ [m] ($\ge0$) & $0.000$ & $0.000$ \\ \midrule
+Ascent time $t_1$ [s] & $2.158$ & $2.158$ \\
+Landing time $t_f$ [s] & $8.097$ & $7.315$ \\
+Phase~B energy $\int u^\top R u\,dt$ & $215.7$ & $526.2$ \\
+Touchdown $(p_x,p_z)$ [m] & $(0,0)$ & $(0,5)$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \begin{figure}[H]
     \centering
@@ -890,10 +1052,13 @@ System is anchored by the known initial launch state at $t=0$:
     
     \item Stationarity conditions ($\frac{\partial H}{\partial u} = 0$)
 
+    Consistent with the implementation and with Parts~I--II, the running cost penalizes the \emph{deviation} control $u=[\delta T,\ \tau]^\top$, where $\delta T = T - m_0 g$ is the thrust increment about the hover trim and the thrust entering the equations of motion is $T = m_0 g + \delta T$ (so $\partial T/\partial \delta T = 1$). Differentiating $H$ directly with respect to the deviation control yields the optimal increment, with no trim offset subtracted afterwards:
+
     \begin{itemize}
-        \item For Thrust ($T$):
-        \[\frac{\partial H}{\partial T} = 2R_{11}T - p_3 \frac{\sin\theta}{m} + p_4 \frac{\cos\theta}{m} - p_7 \alpha = 0\]
-        \[T^* = \text{sat}_{T_{\min}}^{T_{\max}} \left[ \frac{1}{2 R_{11}} \left( p_3 \frac{\sin\theta}{m} - p_4 \frac{\cos\theta}{m} + p_7 \alpha \right) \right]\]
+        \item For the thrust increment ($\delta T$):
+        \[\frac{\partial H}{\partial \delta T} = 2R_{11}\,\delta T - p_3 \frac{\sin\theta}{m} + p_4 \frac{\cos\theta}{m} - p_7 \alpha = 0\]
+        \[\delta T^* = \text{sat}_{\,\delta T_{\min}}^{\,\delta T_{\max}} \left[ \frac{1}{2 R_{11}} \left( p_3 \frac{\sin\theta}{m} - p_4 \frac{\cos\theta}{m} + p_7 \alpha \right) \right],\]
+        where the saturation limits are the actuator bounds expressed in deviation form, $\delta T \in [T_{\min}-m_0 g,\ T_{\max}-m_0 g]$.
 
         \item For Torque ($\tau$):
         \[\frac{\partial H}{\partial \tau} = 2R_{22}\tau + \frac{p_6}{I} = 0\]
@@ -907,7 +1072,7 @@ System is anchored by the known initial launch state at $t=0$:
 
     \item Complete TPBVP
     
-    The complete TPBVP is formed by substituting the optimal, saturated control laws ($T^*$, $\tau^*$) back into the 7 state equations and 7 adjoint equations. This creates a deeply coupled system of 14 nonlinear, first-order ordinary differential equations. This system must be solved simultaneously across the domain $t \in [0, t_f]$, subject to the split boundary conditions $x(0)$ and $p(t_f)$.
+    The complete TPBVP is formed by substituting the optimal, saturated control laws ($\delta T^*$, $\tau^*$) back into the 7 state equations and 7 adjoint equations. This creates a deeply coupled system of 14 nonlinear, first-order ordinary differential equations. This system must be solved simultaneously across the domain $t \in [0, t_f]$, subject to the split boundary conditions $x(0)$ and $p(t_f)$.
 
     \begin{equation} \label{eq:full_tpbvp}
     \small
@@ -934,6 +1099,16 @@ System is anchored by the known initial launch state at $t=0$:
 \end{itemize}
 
 \subsection{Numerical Implementation}
+
+The Part~IV problem is solved in hover-deviation coordinates ($x$ is the deviation from the hover trim $T^\star = m_0 g$, $\theta^\star=0$; control $u=[\delta T,\ \tau]^\top$), so that the linearized solutions of the previous parts can serve directly as the nonlinear warm start. The implementation (\texttt{nonlinear.py}) builds three comparison scenarios on a common initial condition $x_0$ and a common short horizon:
+
+\begin{itemize}
+    \item \textbf{Restriction to the near-hover regime.} Because true hover is \emph{not} an equilibrium of a variable-mass vehicle (holding $T=mg$ continuously depletes mass at $\dot m = -\alpha m g$), the horizon is kept short, $t_f = 4\,\mathrm{s}$ with $201$ uniform nodes. This keeps the trajectory near hover and the mass safely above $m_{dry}$, which is the validity regime prescribed for this part.
+    \item \textbf{Scenario 1 — LQR on the linear plant.} The backward Riccati sweep of Part~I produces $P(t)$ and the feedback $u=-R^{-1}B^\top P(t)\,x$, integrated forward on $\dot x = Ax+Bu$.
+    \item \textbf{Scenario 2 — LQR on the nonlinear plant.} The \emph{same} time-varying gain is applied to the full nonlinear EOM, integrated with a fixed-step RK4 scheme, with control saturation enforced by clipping. This isolates the modeling error incurred by using the linear law on the true plant.
+    \item \textbf{Scenario 3 — Nonlinear PMP / TPBVP.} The coupled $14$-state state/costate system of Eq.~\eqref{eq:full_tpbvp} is solved by collocation (\texttt{scipy.integrate.solve\_bvp}). The optimal control is substituted in closed form from the stationarity conditions and saturated to the actuator bounds. The split boundary conditions are the initial-state match $x(0)=x_0$ and the free-endpoint transversality $p(t_f) = 2 Q_f\, x(t_f)$.
+    \item \textbf{Warm start and costate scaling.} The collocation guess uses the Scenario~1 state history and the costate guess $p(t) = 2P(t)x(t)$; the factor of two maps the $\tfrac12$-scaled Riccati costate to the no-$\tfrac12$ running cost $x^\top Qx + u^\top Ru$ used here. Convergence is declared at a collocation tolerance of $10^{-6}$.
+\end{itemize}
 
 \subsection{Analysis}
 
@@ -967,22 +1142,36 @@ The following 3 simulation scenarios will be compared:
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\linewidth]{figures/fig_control_diagram.png}
-    \caption{Solver sensitivity}
-    \label{fig:p4_solver_sens}
+    \includegraphics[width=\linewidth]{figures/p4_energy_comparison.png}
+    \caption{Energy consumption: control effort $J_u=\int u^\top R u\,dt$ and total cost $J$ for the three scenarios.}
+    \label{fig:p4_energy}
 \end{figure}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\linewidth]{figures/p4_terminal_behavior.png}
-    \caption{Convergence behavior}
+    \caption{Terminal error comparisons (terminal state norm and components).}
+    \label{fig:p4_term_behav}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{figures/p4_convergence.png}
+    \caption{Convergence behavior: interior collocation residual of the converged TPBVP and solver sensitivity of the achieved boundary residual / mesh size to the requested tolerance.}
     \label{fig:p4_conv_behav}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\linewidth]{figures/fig_control_diagram.png}
-    \caption{Terminal residual analysis (terminal error comparisons)}
+    \includegraphics[width=\linewidth]{figures/p4_theta_sensitivity.png}
+    \caption{Solver sensitivity: control effort and PMP-vs-LQR savings as the initial pitch deviation $\theta_0$ is scaled.}
+    \label{fig:p4_solver_sens}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{figures/p4_terminal_residual.png}
+    \caption{Terminal residual analysis: per-component TPBVP boundary residuals (initial match and free-endpoint transversality $p(t_f)=2Q_f x(t_f)$) and the optimality-residual summary.}
     \label{fig:p4_term_resid}
 \end{figure}
 
@@ -991,42 +1180,37 @@ The following 3 simulation scenarios will be compared:
 To verify the numerical solution to the Two-Point Boundary Value Problem (TPBVP) and prove strict adherence to Pontryagin's Maximum Principle (PMP), the solution was validated against the necessary optimality conditions. 
 
 \subsubsection*{Hamiltonian Consistency}
-For an autonomous system with a free final time (or fixed final time), the Hamiltonian must remain constant along the optimal trajectory. Furthermore, for a time-optimal or free-final-time maneuver, this constant must identically equal zero: $H(t) \equiv 0 \ \forall \ t \in [0, t_f]$. As shown in Figure \ref{fig:hamiltonian_phaseX2}, the computed Hamiltonian remains strictly constant, with a maximum deviation of $\mathcal{O}(10^{-8})$, confirming Hamiltonian consistency.
+Part~IV is a \emph{fixed}-final-time, free-endpoint problem, and the hover-trim dynamics are autonomous. The Hamiltonian must therefore remain \emph{constant} along the optimal trajectory; unlike the free-final-time mission of Part~III, this constant is \emph{not} required to vanish. As shown in Figure \ref{fig:hamiltonian_phaseX2}, the Hamiltonian of the nonlinear PMP solution is constant to a drift of $\mathcal{O}(10^{-9})$ about $H(t_f) \approx 34.7$, confirming Hamiltonian consistency. By contrast, applying the linear LQR law to the nonlinear plant produces a Hamiltonian that drifts by $\mathcal{O}(10^{2})$ over the same horizon---a direct, quantitative certificate that the linear law is \emph{not} an extremal of the nonlinear problem.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\linewidth]{figures/p4_hamiltonian.png}
-    \caption{Hamiltonian evolution $H(t)$ over the mission horizon, numerically confirming the necessary constant/zero condition dictated by PMP.}
+    \caption{Hamiltonian evolution $H(t)$ for the three scenarios. The nonlinear PMP solution (bottom) holds $H$ constant to $\mathcal{O}(10^{-9})$ as required for an autonomous fixed-time extremal, whereas the LQR law on the nonlinear plant drifts by $\mathcal{O}(10^{2})$.}
     \label{fig:hamiltonian_phaseX2}
 \end{figure}
 
 \subsubsection*{Terminal Conditions, Adjoint Boundaries, and Shooting Residuals}
-The shooting algorithm's convergence was verified by analyzing the boundary condition residuals. Table \ref{tab:validation_phaseX} presents the required terminal state constraints alongside the corresponding transversality conditions for the costate vector $p(t_f)$. 
+Because the terminal state is free, the boundary conditions verified are the initial-state match $x(0)=x_0$ and the free-endpoint transversality $p(t_f) = 2 Q_f\, x(t_f)$; there are no fixed terminal-state targets in this part. Table \ref{tab:validation_phaseX} reports the per-component boundary residuals together with the interior collocation defect and the Hamiltonian drift.
 
-The global $\mathcal{L}_\infty$ norm of the shooting residual vector was evaluated at $\mathbf{1.42 \times 10^{-7}}$, well within the acceptable numerical tolerance threshold, guaranteeing the optimality of the solution.
+The global $\mathcal{L}_\infty$ norm of the boundary-condition residual was $\mathbf{1.8 \times 10^{-15}}$ and the maximum interior collocation residual was $9.7 \times 10^{-7}$ on a converged mesh of $219$ nodes---both within the requested solver tolerance, confirming that the computed solution satisfies the necessary optimality conditions to numerical precision.
 
 \begin{table}[H]
 \centering
-\caption{Validation of Terminal States and Transversality Conditions}
+\caption{Part~IV validation: boundary and optimality residuals of the nonlinear TPBVP (fixed-time, free endpoint).}
 \label{tab:validation_phaseX}
 \begin{small} 
 \setlength{\tabcolsep}{3.5pt} 
-\begin{threeparttable}
-\begin{tabular}{@{}llcc@{}}
+\begin{tabular}{@{}llc@{}}
 \toprule
-Type & Requirement & Computed & Residual \\ \midrule
-State & $p_z(t_f) = 0$ \tnote{a} & $1.2 \times 10^{-7}$ & $1.2 \times 10^{-7}$ \\
-State & $v_z(t_f) = 0$ \tnote{b} & $-5.0 \times 10^{-8}$ & $5.0 \times 10^{-8}$ \\
-State & $\theta(t_f) = 0$ \tnote{c} & $0.0$ & $0.0$ \\ \midrule
-Trans. & $p_{p_x}(t_f) = 0$ & $8.4 \times 10^{-7}$ & $8.4 \times 10^{-7}$ \\
-Trans. & $p_{v_x}(t_f) = 0$ & $-3.1 \times 10^{-7}$ & $3.1 \times 10^{-7}$ \\
-Trans. & $p_{\omega}(t_f) = 0$ & $0.0$ & $0.0$ \\ \bottomrule
+Type & Boundary / optimality condition & Residual \\ \midrule
+Initial      & $x(0) = x_0$ \quad($\mathcal{L}_\infty$)                  & $3.9 \times 10^{-26}$ \\ \midrule
+Transv.      & $p_{p_z}(t_f) = 2 Q_{f,22}\, p_z(t_f)$                     & $1.8 \times 10^{-15}$ \\
+Transv.      & $p_{\theta}(t_f) = 2 Q_{f,55}\, \theta(t_f)$               & $8.9 \times 10^{-16}$ \\
+Transv.      & $p_{\omega}(t_f) = 2 Q_{f,66}\, \omega(t_f)$               & $5.6 \times 10^{-17}$ \\
+Transv.      & $p(t_f) = 2 Q_f\, x(t_f)$ \quad($\mathcal{L}_\infty$)      & $1.8 \times 10^{-15}$ \\ \midrule
+Hamiltonian  & $H(t)$ drift (autonomous, fixed $t_f$)                     & $1.4 \times 10^{-9}$  \\
+Collocation  & interior RMS defect (219 nodes)                           & $9.7 \times 10^{-7}$  \\ \bottomrule
 \end{tabular}
-\begin{tablenotes}
-    \scriptsize
-    \item[a] Ground constraint; \item[b] Soft touch constraint; \item[c] Upright constraint.
-\end{tablenotes}
-\end{threeparttable}
 \end{small}
 \end{table}
  
